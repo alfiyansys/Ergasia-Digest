@@ -1,12 +1,12 @@
 """Core digest logic: fetch per-account events, compute metrics, render output.
 
 Pure functions — shared by app.py (HTTP) and cli.py (CLI), no logic
-duplicated between the two entrypoints (see AGENTS.md). Notably:
-fetch_all_events() does NOT write to state.py — it only *reads*
-last_run to resolve the default `since` window. Callers decide whether
-to persist state afterwards (e.g. /digest/preview must not touch state,
-/digest/run must), using each result's "fetched_at" as the new
-last_run value on success.
+duplicated between the two entrypoints (see AGENTS.md). There is no
+persistent state anywhere in this project (removed by design, see
+AGENTS.md) — every call is a fresh live fetch from GitHub/GitLab. The
+window defaults to a fixed rolling lookback (DEFAULT_LOOKBACK_HOURS)
+and can be overridden via `since_override`; nothing is ever read from
+or written to disk here beyond the account list itself.
 """
 
 from __future__ import annotations
@@ -16,18 +16,14 @@ from typing import Optional
 from urllib.parse import urlparse
 
 import accounts_store
-import state
 from sources import github_source, gitlab_source
 
 DEFAULT_LOOKBACK_HOURS = 24
 
 
-def _resolve_since(account: dict, since_override: Optional[datetime]) -> datetime:
+def _resolve_since(since_override: Optional[datetime]) -> datetime:
     if since_override is not None:
         return since_override
-    last_run = state.get_last_run(account["id"])
-    if last_run is not None:
-        return last_run
     return datetime.now(timezone.utc) - timedelta(hours=DEFAULT_LOOKBACK_HOURS)
 
 
@@ -40,8 +36,8 @@ def fetch_all_events(
     accounts_store).
 
     Returns one result dict per account:
-      success: {"account", "since", "fetched_at", "events"}
-      failure: {"account", "since", "fetched_at", "error"}
+      success: {"account", "since", "events"}
+      failure: {"account", "since", "error"}
 
     One account's fetch failure (network error, bad token, etc.) does not
     stop the others from being processed.
@@ -49,10 +45,10 @@ def fetch_all_events(
     if accounts is None:
         accounts = accounts_store.load_accounts()
 
+    since = _resolve_since(since_override)
+
     results = []
     for account in accounts:
-        since = _resolve_since(account, since_override)
-        fetched_at = datetime.now(timezone.utc)
         try:
             if account["type"] == "github":
                 events = github_source.fetch_events(account["username"], account["api_key"], since)
@@ -63,9 +59,9 @@ def fetch_all_events(
                     account["api_key"],
                     since,
                 )
-            results.append({"account": account, "since": since, "fetched_at": fetched_at, "events": events})
+            results.append({"account": account, "since": since, "events": events})
         except Exception as e:
-            results.append({"account": account, "since": since, "fetched_at": fetched_at, "error": str(e)})
+            results.append({"account": account, "since": since, "error": str(e)})
 
     return results
 
