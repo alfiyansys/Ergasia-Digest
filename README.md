@@ -168,6 +168,39 @@ node; otherwise a rescheduled container will start with an empty
 `accounts.json`/`state.json` (the original data isn't deleted, just
 inaccessible from wherever the container landed).
 
+### Pyker (lightweight alternative to systemd/Docker)
+
+[Pyker](https://github.com/mrvi0/pyker) is a small, no-root, single-file
+Python process manager — `start`/`stop`/`restart`/`list`/`logs`, nothing
+container-related. Good fit if systemd/Docker feel like too much for a
+personal setup.
+
+```
+curl -sSL https://raw.githubusercontent.com/mrvi0/pyker/main/install.sh | bash
+
+cp .env.example .env   # fill in API_KEY, set PORT if you don't want the default
+pyker start ergasia-digest run.py --venv ./.venv
+pyker list
+pyker logs ergasia-digest -f
+pyker restart ergasia-digest
+pyker stop ergasia-digest
+```
+
+Run via `run.py`, not `uvicorn app:app` directly — Pyker's CLI only knows
+how to launch a plain `.py` script, and `run.py` loads `.env` itself since
+Pyker has no env-file mechanism of its own (unlike systemd's
+`EnvironmentFile=` or docker-compose's `env_file:`).
+
+**Caveat, found by reading Pyker's actual source rather than trusting its
+docs:** the `--auto-restart` flag exists in its CLI and gets recorded, but
+nothing in the current codebase actually watches and restarts a crashed
+process — there's no background monitor loop. Don't rely on Pyker alone
+for crash recovery; use systemd (`Restart=on-failure`) or Docker
+(`restart: unless-stopped`) if that matters to you.
+
+Account management stays CLI-only exactly like bare-metal — Pyker doesn't
+containerize anything, so `cli.py` just runs directly on the same host.
+
 ## Triggering the daily digest
 
 In production, an agentic harness — not a raw system crontab — is
