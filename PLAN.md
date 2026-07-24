@@ -31,6 +31,13 @@ Accounts are **not edited manually via a config file, and not over HTTP at all**
 
 **Why CLI-only, not HTTP:** adding an account means accepting a raw personal access token. An HTTP endpoint for that — even gated by `X-API-Key` — still adds attack surface for the most sensitive operation in this service (it could be used to inject/enumerate tokens if `API_KEY` ever leaks). CLI-only means only someone with direct shell/SSH access to the host can manage accounts — the gate becomes OS access, not the network. `cli.py accounts add` also asks for `api_key` via a hidden prompt (`getpass`, not a command-line flag) so the token doesn't end up in shell history or show up in `ps aux`.
 
+**Verification on add:** before an account is persisted to `accounts.json`, `cli.py accounts add` makes a live call to that account's platform (GitHub or GitLab Events API, at `base_url` for GitLab) using the exact credentials just entered, to confirm the account is actually usable for digesting — not just that the fields are well-formed. Concretely, it checks:
+- The token authenticates successfully (not invalid/expired/revoked).
+- The token can read that `username`'s events (right scope/permissions — e.g. a GitLab token needs at least `read_api`; a GitHub token needs read access to the events it needs).
+- The response is a well-formed events payload `digest.py` can actually parse for the §3 metrics (commits, PR/MR, issues) — **not** that the account has non-zero recent activity. A brand-new or quiet account with zero events in range is a valid, successful response and must pass; the check is about API/permission access, not activity volume.
+
+If verification fails, the account is **not** written to `accounts.json` — `accounts add` exits non-zero with the specific reason (auth failed / insufficient scope / username not found / network error reaching `base_url`), so a broken account never sits silently in the store until a digest run fails on it days later. This reuses the same fetch path `sources/github_source.py`/`sources/gitlab_source.py` already implement for `digest.py` (a `verify_access(...)` function alongside `fetch_events(...)`), rather than a separate check that could drift from what the digest actually needs. There is deliberately no `--skip-verify` flag — an account that can't be verified shouldn't be added, full stop.
+
 **Schema for each account** (`accounts.example.json` documents this shape, without real token values):
 
 ```json
@@ -57,11 +64,18 @@ Fields:
 ```
 $ python cli.py accounts add --type github --username alice
 Account API key (hidden input): ****************
+Verifying account access... ok
 Account added: github-github.com-alice
 
 $ python cli.py accounts add --type gitlab --username bob --base-url https://gitlab.acme.example.com --label "GitLab (work)"
 Account API key (hidden input): ****************
+Verifying account access... ok
 Account added: gitlab-acme.example.com-bob
+
+$ python cli.py accounts add --type gitlab --username carol --base-url https://gitlab.acme.example.com --label "GitLab (work)"
+Account API key (hidden input): ****************
+Verifying account access... failed: token is valid but missing 'read_api' scope (needed to read events)
+Account not added.
 
 $ python cli.py accounts list
 ID                                TYPE    USERNAME  BASE_URL                   LABEL           LAST_RUN
@@ -193,7 +207,7 @@ Work is organized into phases. Each phase gets its own `feature/phase-<n>-<slug>
 - [ ] **2. `accounts_store.py`** — account CRUD:
   - [ ] a. Schema (dataclass/typed dict, including optional `label`) + `load_accounts()`/`save_accounts()` (create an empty store if missing)
   - [ ] b. `generate_id(type, username, base_url)` → `{type}-{host}-{username}` (internal `id` only — never rendered in digest output, see §3)
-  - [ ] c. `add_account(...)` with validation (type in {github, gitlab}; `base_url` only for gitlab; `label` accepted for either type; reject duplicate id)
+  - [ ] c. `add_account(...)` with field-level validation only (type in {github, gitlab}; `base_url` only for gitlab; `label` accepted for either type; reject duplicate id) — no network calls here; live verification against the actual platform is `cli.py`'s job (Phase 5), calling `sources.*.verify_access(...)` before it ever calls this
   - [ ] d. `list_accounts()` with `api_key` masked (last 4 chars) — `base_url`/`label` shown as-is, this output stays local (§2)
   - [ ] e. `delete_account(id)`
 
@@ -207,6 +221,7 @@ Work is organized into phases. Each phase gets its own `feature/phase-<n>-<slug>
 - [ ] **4. Refactor `sources/github_source.py` and `sources/gitlab_source.py`**:
   - [ ] a. Accept `(username, token, since)` / `(base_url, username, token, since)` as parameters — no direct env var reads
   - [ ] b. Normalize both clients' output into one shared event shape, so `digest.py` doesn't need platform-specific branching to compute metrics
+  - [ ] c. Add `verify_access(username, token)` / `verify_access(base_url, username, token)` — a live, minimal call to confirm auth succeeds and the token can read that account's events (used by `cli.py accounts add`, see Phase 5); returns ok/reason, doesn't require any events to actually exist
 
 ### Phase 4 — Digest Core (`feature/phase-4-digest-core`)
 
@@ -220,7 +235,7 @@ Work is organized into phases. Each phase gets its own `feature/phase-<n>-<slug>
 ### Phase 5 — Interfaces (`feature/phase-5-interfaces`)
 
 - [ ] **6. `cli.py`**:
-  - [ ] a. `accounts add` (`--label` flag for the digest-safe display name; `getpass` prompt for `api_key`; calls `accounts_store.add_account`)
+  - [ ] a. `accounts add` (`--label` flag for the digest-safe display name; `getpass` prompt for `api_key`; calls `sources.*.verify_access(...)` first and only calls `accounts_store.add_account` if it passes — print the failure reason and exit non-zero without writing anything if it doesn't)
   - [ ] b. `accounts list` / `accounts delete` (join `last_run` from `state.py` for `list`; call `state.py` cleanup on `delete`)
   - [ ] c. `digest preview` (`--account`/`--hours`/`--days`, mutually-exclusive validation)
   - [ ] d. `digest run` / `digest latest`
