@@ -38,3 +38,11 @@ def set_last_run(account_id: str, ts: datetime) -> None:
     state = _load_state()
     state["last_run"][account_id] = ts.isoformat()
     _save_state(state)
+
+
+def delete_account_state(account_id: str) -> None:
+    """Called from accounts_store.delete_account / cli.py accounts delete so no
+    stale last_run entry is left behind for a removed account."""
+    state = _load_state()
+    state["last_run"].pop(account_id, None)
+    _save_state(state)
