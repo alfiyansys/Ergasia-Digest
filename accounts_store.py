@@ -114,3 +114,13 @@ def list_accounts() -> list[dict]:
         entry["api_key"] = _mask_api_key(entry["api_key"])
         result.append(entry)
     return result
+
+
+def delete_account(account_id: str) -> bool:
+    """Returns True if an account was removed, False if account_id wasn't found."""
+    accounts = load_accounts()
+    remaining = [a for a in accounts if a["id"] != account_id]
+    if len(remaining) == len(accounts):
+        return False
+    save_accounts(remaining)
+    return True

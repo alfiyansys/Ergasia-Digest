@@ -204,12 +204,12 @@ Work is organized into phases. Each phase gets its own `feature/phase-<n>-<slug>
 
 ### Phase 2 — Storage Layer (`feature/phase-2-storage-layer`)
 
-- [ ] **2. `accounts_store.py`** — account CRUD:
+- [x] **2. `accounts_store.py`** — account CRUD:
   - [x] a. Schema (dataclass/typed dict, including optional `label`) + `load_accounts()`/`save_accounts()` (create an empty store if missing)
   - [x] b. `generate_id(type, username, base_url)` → `{type}-{host}-{username}` (internal `id` only — never rendered in digest output, see §3)
   - [x] c. `add_account(...)` with field-level validation only (type in {github, gitlab}; `base_url` only for gitlab; `label` accepted for either type; reject duplicate id) — no network calls here; live verification against the actual platform is `cli.py`'s job (Phase 5), calling `sources.*.verify_access(...)` before it ever calls this
   - [x] d. `list_accounts()` with `api_key` masked (last 4 chars) — `base_url`/`label` shown as-is, this output stays local (§2)
-  - [ ] e. `delete_account(id)`
+  - [x] e. `delete_account(id)`
 
 - [ ] **3. `state.py`** — write per-account tracking and the digest cache together in the same step, since both are needed before steps 5–7 build anything that reads "latest":
   - [ ] a. Change the tracking key from per-source to per-`account_id`: `get_last_run(account_id)` / `set_last_run(account_id, ts)`
