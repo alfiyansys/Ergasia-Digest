@@ -1,0 +1,19 @@
+services:
+  ergasia-digest:
+    build: .
+    # Published to the host's loopback only — not 0.0.0.0 — so the service
+    # stays unreachable from outside the host, same posture as bare-metal
+    # (see PLAN.md §7). The container binds 0.0.0.0 internally (Dockerfile),
+    # which is unrelated to what gets exposed on the host side.
+    ports:
+      - "127.0.0.1:8000:8000"
+    env_file:
+      - .env
+    environment:
+      ACCOUNTS_FILE: /data/accounts.json
+    volumes:
+      # A directory mount, not a per-file one — avoids the Docker footgun
+      # where bind-mounting an individual file that doesn't exist yet
+      # silently creates a directory instead (see PLAN.md §8 Phase 7).
+      - ./data:/data
+    restart: unless-stopped
