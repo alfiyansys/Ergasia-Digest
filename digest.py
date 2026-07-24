@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from urllib.parse import urlparse
 
 import accounts_store
 import state
@@ -86,3 +87,22 @@ def compute_metrics(events: list[dict]) -> dict:
         if key:
             metrics[key] += 1
     return metrics
+
+
+def platform_label(account: dict) -> str:
+    """GitHub / GitLab / account's own label / generic 'GitLab (self-hosted)'.
+
+    Deliberately never renders the real base_url hostname (PLAN.md §2/§3) —
+    digest output leaves the host via the harness, so a self-hosted
+    hostname without an explicit label falls back to a generic tag rather
+    than being interpolated in.
+    """
+    if account.get("label"):
+        return account["label"]
+    if account["type"] == "github":
+        return "GitHub"
+
+    hostname = urlparse(account.get("base_url") or "https://gitlab.com").hostname
+    if hostname == "gitlab.com":
+        return "GitLab"
+    return "GitLab (self-hosted)"
