@@ -235,7 +235,7 @@ Work is organized into phases. Each phase gets its own `feature/phase-<n>-<slug>
 
 - [ ] **5.1. `cli.py`**:
   - [x] a. `accounts add` (`--label` flag for the digest-safe display name; `getpass` prompt for `api_key`; calls `sources.*.verify_access(...)` first and only calls `accounts_store.add_account` if it passes — print the failure reason and exit non-zero without writing anything if it doesn't)
-  - [ ] b. `accounts list` / `accounts delete` (join `last_run` from `state.py` for `list`; call `state.py` cleanup on `delete`)
+  - [x] b. `accounts list` / `accounts delete` (join `last_run` from `state.py` for `list`; call `state.py` cleanup on `delete`)
   - [ ] c. `digest preview` (`--account`/`--hours`/`--days`, mutually-exclusive validation)
   - [ ] d. `digest run` / `digest latest`
 
