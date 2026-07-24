@@ -30,17 +30,44 @@ def _parse_timestamp(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
-def _normalize_event(event: dict, created_at: datetime) -> list[dict]:
+def _count_push_commits(repo_full_name: str, before: str, head: str, token: str) -> int:
+    """GitHub's Events API no longer includes a `commits` list (or even a
+    `size`/`distinct_size` count) in PushEvent payloads — verified against
+    a real account: the payload only carries `ref`/`head`/`before` now.
+    The Compare API's `total_commits` is the accurate way to count commits
+    in a push today."""
+    if before == "0" * 40:
+        # New branch with no prior history to diff against — can't measure
+        # "commits added" precisely; count the push itself as one commit
+        # rather than guessing.
+        return 1
+    resp = requests.get(
+        f"{GITHUB_API_BASE}/repos/{repo_full_name}/compare/{before}...{head}",
+        headers=_headers(token),
+        timeout=REQUEST_TIMEOUT,
+    )
+    if resp.status_code != 200:
+        return 1  # can't determine the exact count; don't undercount to 0
+    return resp.json().get("total_commits", 1)
+
+
+def _normalize_event(event: dict, created_at: datetime, token: str) -> list[dict]:
     """Maps one raw GitHub event to zero or more normalized events:
     {"kind", "created_at"}, kind in {commit, pr_opened, pr_merged,
     issue_opened, issue_closed}. A single PushEvent can carry several
-    commits, so it expands into one "commit" entry per commit."""
+    commits — since the payload itself no longer says how many (see
+    _count_push_commits), one extra API call resolves the real count."""
     event_type = event.get("type")
     payload = event.get("payload", {})
 
     if event_type == "PushEvent":
-        commits = payload.get("commits", [])
-        return [{"kind": "commit", "created_at": created_at} for _ in commits]
+        repo_full_name = event.get("repo", {}).get("name")
+        before, head = payload.get("before"), payload.get("head")
+        if repo_full_name and before and head:
+            count = _count_push_commits(repo_full_name, before, head, token)
+        else:
+            count = 1
+        return [{"kind": "commit", "created_at": created_at} for _ in range(count)]
 
     if event_type == "PullRequestEvent":
         action = payload.get("action")
@@ -99,7 +126,7 @@ def fetch_events(username: str, token: str, since: datetime) -> list[dict]:
             if created_at < since:
                 reached_older_than_since = True
                 continue
-            normalized.extend(_normalize_event(event, created_at))
+            normalized.extend(_normalize_event(event, created_at, token))
 
         if reached_older_than_since or len(events) < 100:
             break
