@@ -42,7 +42,7 @@ If verification fails, the account is **not** written to `accounts.json` — `ac
 
 ```json
 {
-  "id": "gitlab-acme-bob",
+  "id": "gitlab-gitlab.acme.example.com-bob",
   "type": "gitlab",
   "username": "bob",
   "base_url": "https://gitlab.acme.example.com",
@@ -70,7 +70,7 @@ Account added: github-github.com-alice
 $ python cli.py accounts add --type gitlab --username bob --base-url https://gitlab.acme.example.com --label "GitLab (work)"
 Account API key (hidden input): ****************
 Verifying account access... ok
-Account added: gitlab-acme.example.com-bob
+Account added: gitlab-gitlab.acme.example.com-bob
 
 $ python cli.py accounts add --type gitlab --username carol --base-url https://gitlab.acme.example.com --label "GitLab (work)"
 Account API key (hidden input): ****************
@@ -78,12 +78,12 @@ Verifying account access... failed: token is valid but missing 'read_api' scope 
 Account not added.
 
 $ python cli.py accounts list
-ID                                TYPE    USERNAME  BASE_URL                   LABEL           LAST_RUN
-github-github.com-alice           github  alice     github.com                 -               2026-07-24T21:00:00+07:00
-gitlab-acme.example.com-bob        gitlab  bob       gitlab.acme.example.com    GitLab (work)   -
+ID                                   TYPE    USERNAME  BASE_URL                   LABEL           LAST_RUN
+github-github.com-alice              github  alice     github.com                 -               2026-07-24T21:00:00+07:00
+gitlab-gitlab.acme.example.com-bob   gitlab  bob       gitlab.acme.example.com    GitLab (work)   -
 
-$ python cli.py accounts delete gitlab-acme.example.com-bob
-Account 'gitlab-acme.example.com-bob' deleted.
+$ python cli.py accounts delete gitlab-gitlab.acme.example.com-bob
+Account 'gitlab-gitlab.acme.example.com-bob' deleted.
 ```
 
 `accounts list` still shows the real `base_url` — this command only runs locally on the trusted host (§2/§7), so there's no external-exposure concern there. The masking below only applies to what gets rendered into digest output, since that text is what leaves the host (sent to chat by the harness).
@@ -133,7 +133,7 @@ Rules:
 - Metrics with a value of 0 **other than** commits may be dropped from the `Activities` sentence, so it doesn't get noisy/long on quiet days (e.g. no MRs merged → don't write "0 merge requests merged").
 - If an account fails to fetch during this window (see the failure rules in §2), its block **still appears** (not silently skipped) with `Activities: fetch failed (<short reason, e.g. rate limit>)` — so it's visible that an account needs attention (expired token, etc.) instead of just vanishing from the digest without a trace.
 - This is the human-readable rendering generated from the underlying per-account data structure: `{ "account_id", "platform", "username", "metrics": { "commits_created", "prs_or_mrs_opened", "prs_or_mrs_merged", "issues_opened", "issues_closed" }, "error"? }`. HTTP (`/digest/preview`, `/digest/run`'s response, `/digest/latest`) returns this text (ready to send to chat by the harness) combined with the raw data structure in a single JSON payload; the CLI (`cli.py digest ...`) prints the text version directly to stdout.
-- **Caution for the harness:** `account_id` in that JSON payload can still be derived from the real self-hosted hostname (§2, e.g. `gitlab-acme.example.com-bob`), since it's only ever used internally (state tracking, `?account=` filtering) and was never in scope for the masking above. The raw JSON is HTTP/CLI output gated by `API_KEY`/host access (§4) — the harness should only forward the rendered `platform`/text fields to chat, never paste the raw payload (including `account_id`) into an external channel.
+- **Caution for the harness:** `account_id` in that JSON payload can still be derived from the real self-hosted hostname (§2, e.g. `gitlab-gitlab.acme.example.com-bob`), since it's only ever used internally (state tracking, `?account=` filtering) and was never in scope for the masking above. The raw JSON is HTTP/CLI output gated by `API_KEY`/host access (§4) — the harness should only forward the rendered `platform`/text fields to chat, never paste the raw payload (including `account_id`) into an external channel.
 
 ## 4. HTTP Endpoints (Planned) & CLI Access
 
@@ -150,7 +150,7 @@ HTTP endpoints are **read-only for digest data** — there is no endpoint for ma
 
 ```
 $ python cli.py digest preview --hours 6
-$ python cli.py digest preview --account gitlab-acme.example.com-bob --days 3
+$ python cli.py digest preview --account gitlab-gitlab.acme.example.com-bob --days 3
 $ python cli.py digest run       # equivalent to POST /digest/run: updates state + cache
 $ python cli.py digest latest    # equivalent to GET /digest/latest
 ```
@@ -204,17 +204,17 @@ Work is organized into phases. Each phase gets its own `feature/phase-<n>-<slug>
 
 ### Phase 2 — Storage Layer (`feature/phase-2-storage-layer`)
 
-- [ ] **2. `accounts_store.py`** — account CRUD:
-  - [ ] a. Schema (dataclass/typed dict, including optional `label`) + `load_accounts()`/`save_accounts()` (create an empty store if missing)
-  - [ ] b. `generate_id(type, username, base_url)` → `{type}-{host}-{username}` (internal `id` only — never rendered in digest output, see §3)
-  - [ ] c. `add_account(...)` with field-level validation only (type in {github, gitlab}; `base_url` only for gitlab; `label` accepted for either type; reject duplicate id) — no network calls here; live verification against the actual platform is `cli.py`'s job (Phase 5), calling `sources.*.verify_access(...)` before it ever calls this
-  - [ ] d. `list_accounts()` with `api_key` masked (last 4 chars) — `base_url`/`label` shown as-is, this output stays local (§2)
-  - [ ] e. `delete_account(id)`
+- [x] **2. `accounts_store.py`** — account CRUD:
+  - [x] a. Schema (dataclass/typed dict, including optional `label`) + `load_accounts()`/`save_accounts()` (create an empty store if missing)
+  - [x] b. `generate_id(type, username, base_url)` → `{type}-{host}-{username}` (internal `id` only — never rendered in digest output, see §3)
+  - [x] c. `add_account(...)` with field-level validation only (type in {github, gitlab}; `base_url` only for gitlab; `label` accepted for either type; reject duplicate id) — no network calls here; live verification against the actual platform is `cli.py`'s job (Phase 5), calling `sources.*.verify_access(...)` before it ever calls this
+  - [x] d. `list_accounts()` with `api_key` masked (last 4 chars) — `base_url`/`label` shown as-is, this output stays local (§2)
+  - [x] e. `delete_account(id)`
 
-- [ ] **3. `state.py`** — write per-account tracking and the digest cache together in the same step, since both are needed before steps 5–7 build anything that reads "latest":
-  - [ ] a. Change the tracking key from per-source to per-`account_id`: `get_last_run(account_id)` / `set_last_run(account_id, ts)`
-  - [ ] b. `delete_account_state(account_id)` — called from `accounts_store.delete_account` / `cli.py accounts delete`
-  - [ ] c. `save_latest_digest(text, data)` / `get_latest_digest()` — the backing store for `/digest/latest` and `cli.py digest latest`
+- [x] **3. `state.py`** — write per-account tracking and the digest cache together in the same step, since both are needed before steps 5–7 build anything that reads "latest":
+  - [x] a. Change the tracking key from per-source to per-`account_id`: `get_last_run(account_id)` / `set_last_run(account_id, ts)`
+  - [x] b. `delete_account_state(account_id)` — called from `accounts_store.delete_account` / `cli.py accounts delete`
+  - [x] c. `save_latest_digest(text, data)` / `get_latest_digest()` — the backing store for `/digest/latest` and `cli.py digest latest`
 
 ### Phase 3 — Source Clients (`feature/phase-3-source-clients`)
 

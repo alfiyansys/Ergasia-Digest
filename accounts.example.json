@@ -6,7 +6,7 @@
     "api_key": "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
   },
   {
-    "id": "gitlab-acme.example.com-bob",
+    "id": "gitlab-gitlab.acme.example.com-bob",
     "type": "gitlab",
     "username": "bob",
     "base_url": "https://gitlab.acme.example.com",
