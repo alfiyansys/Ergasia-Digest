@@ -77,6 +77,31 @@ Notes:
   printing the real hostname (digest text leaves the host via the harness,
   so the real hostname is treated as sensitive).
 
+### Required token scopes
+
+The per-account token needs to be able to read `GET /users/{username}/events`
+(GitHub) or `GET /users/:id/events` (GitLab) — that's what `accounts add`'s
+live verification actually checks, so a token that fails to add doesn't have
+enough of the below.
+
+**GitHub:**
+- **Classic personal access token**: `repo` scope, if you want activity in
+  private repos to show up (this is what makes private events visible on
+  that endpoint at all). If you only care about public-repo activity, no
+  scope is required — but most personal digests want private activity too,
+  since that's usually most of the actual work.
+- **Fine-grained personal access token**: read-only access to **Contents**,
+  **Issues**, and **Pull requests** for whichever repos you want tracked
+  (**Metadata** read is mandatory and gets included automatically). Scope
+  it to "All repositories" if you don't want to keep updating it as you
+  create new ones.
+
+**GitLab** (gitlab.com or self-hosted): a personal access token with the
+**`read_api`** scope (the broader `api` scope also works, since it's a
+superset). `read_user` alone is *not* enough — it lets the token identify
+itself but can't read events, which is exactly the failure
+`accounts add` reports as `token is valid but missing 'read_api' scope`.
+
 ## Checking the digest (HTTP or CLI)
 
 Both interfaces call the same underlying logic and produce the same output.
