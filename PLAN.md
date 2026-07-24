@@ -218,10 +218,10 @@ Work is organized into phases. Each phase gets its own `feature/phase-<n>-<slug>
 
 ### Phase 3 — Source Clients (`feature/phase-3-source-clients`)
 
-- [ ] **3.1. Write `sources/github_source.py` and `sources/gitlab_source.py`**:
-  - [ ] a. Accept `(username, token, since)` / `(base_url, username, token, since)` as parameters — no direct env var reads
-  - [ ] b. Normalize both clients' output into one shared event shape, so `digest.py` doesn't need platform-specific branching to compute metrics
-  - [ ] c. Add `verify_access(username, token)` / `verify_access(base_url, username, token)` — a live, minimal call to confirm auth succeeds and the token can read that account's events (used by `cli.py accounts add`, see Phase 5); returns ok/reason, doesn't require any events to actually exist
+- [x] **3.1. Write `sources/github_source.py` and `sources/gitlab_source.py`**:
+  - [x] a. Accept `(username, token, since)` / `(base_url, username, token, since)` as parameters — no direct env var reads
+  - [x] b. Normalize both clients' output into one shared event shape, so `digest.py` doesn't need platform-specific branching to compute metrics
+  - [x] c. Add `verify_access(username, token)` / `verify_access(base_url, username, token)` — a live, minimal call to confirm auth succeeds and the token can read that account's events (used by `cli.py accounts add`, see Phase 5); returns ok/reason, doesn't require any events to actually exist
 
 ### Phase 4 — Digest Core (`feature/phase-4-digest-core`)
 
