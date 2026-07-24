@@ -196,7 +196,7 @@ Work is organized into phases. Each phase gets its own `feature/phase-<n>-<slug>
 
 - [ ] **1. Project scaffolding & safety net** — do this *before* anything can create a real `accounts.json` or needs `fastapi`/`uvicorn` installed:
   - [x] a. `.gitignore` (exclude `accounts.json`, `.env`, `__pycache__/`, `.venv/`, etc.)
-  - [ ] b. `.env.example` (`API_KEY=`, `PORT=8000`)
+  - [x] b. `.env.example` (`API_KEY=`, `PORT=8000`)
   - [ ] c. `accounts.example.json` documenting the §2 schema (one github + one gitlab example entry, fake tokens)
   - [ ] d. `requirements.txt` (+`fastapi`, +`uvicorn`)
 
