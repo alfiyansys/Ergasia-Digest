@@ -8,6 +8,8 @@ A small FastAPI webservice that pulls activity from GitHub + GitLab (multi-accou
 
 No code yet — just `PLAN.md`. If asked to "continue the implementation" without further detail, follow the step order in `PLAN.md` §8 as-is — don't reorder or skip steps without asking.
 
+**Check off the corresponding `- [ ]` box in `PLAN.md` §8 (`- [ ]` → `- [x]`) as soon as a step or lettered sub-step is actually done** — include that edit in the same commit as the step itself, not as a separate batch-update pass later. `PLAN.md` §8 is the one place progress is tracked across sessions, so an unchecked box must mean "not done yet," not "done but forgot to mark it."
+
 ## Rules not to break without discussing first
 
 - **Account management (`add`/`list`/`delete`) is CLI-only, via `cli.py`.** Don't build an HTTP `/accounts` endpoint in any form — this is a deliberate decision (§2), not something that just hasn't been gotten to yet. Reason: accepting raw tokens over the network adds attack surface for the most sensitive operation in this service.
@@ -16,7 +18,8 @@ No code yet — just `PLAN.md`. If asked to "continue the implementation" withou
 - **`notify.py` is deliberately not wired into any endpoint or command.** This is deferred by design (an external harness sends notifications instead), not a TODO that needs finishing urgently. Don't call it from `/digest/run` or `cli.py digest run` without an explicit discussion first.
 - **`?hours=`/`?days=` only exist on `/digest/preview` and `cli.py digest preview`.** `/digest/run` and `cli.py digest run` deliberately don't accept this override — both must stay consistent with incremental `last_run` so state never has a gap/overlap.
 - **`base_url` is only valid for `type: gitlab`.** Reject it (validation error) if this field is set for `type: github` — GitHub Enterprise isn't supported yet.
-- **The digest output format must exactly follow `PLAN.md` §3:** a `Platform:`/`Username:`/`Activities:` block per account, `commits created` always shown (including 0), other metrics dropped when 0, GitLab platform labels use the hostname when custom/self-hosted, and accounts that failed to fetch still appear as a block (with a short error message) — never silently skipped.
+- **The digest output format must exactly follow `PLAN.md` §3:** a `Platform:`/`Username:`/`Activities:` block per account, `commits created` always shown (including 0), other metrics dropped when 0, and accounts that failed to fetch still appear as a block (with a short error message) — never silently skipped.
+- **Never render the real self-hosted GitLab hostname (`base_url`) in digest output.** That text leaves the host via the harness (§6), so it's an external-exposure risk, not just an internal detail. Use the account's `label` if set, otherwise a generic `GitLab (self-hosted)` fallback (`PLAN.md` §2/§3). The real hostname is fine in `cli.py accounts list` (local-only) and internally in `account_id` — just don't let `account_id` or `base_url` leak into anything sent to chat.
 - **`cli.py digest run` and `POST /digest/run` read/write the same state/cache files with no locking.** Don't run both at the same time; this is a deliberate choice to avoid over-engineering file-locking into a tool this small internally — don't "fix" it by adding locking unless asked.
 
 ## Code conventions (planned — follow once `app.py`/`cli.py` are built)
@@ -27,9 +30,9 @@ No code yet — just `PLAN.md`. If asked to "continue the implementation" withou
 
 ## Git Workflow
 
-- **Gitflow with `dev` as staging:** `main` = always stable/production (what runs on `invis`), `dev` = staging/integration — where feature branches get merged and validated before going up to `main`. Work on each `PLAN.md` §8 step in a `feature/<short-name>` branch (e.g. `feature/accounts-store`, `feature/cli-digest`, `feature/app-http`), branched from an up-to-date `dev` (not from `main`), merged back to `dev` once that step is done and smoke-tested. `dev` only gets merged/promoted to `main` once a batch of steps has been tried out together in staging and is considered deploy-ready — don't commit directly to `main` or to `dev` for work that isn't a fully finished step.
-- **Granular commits per logical step** — not one giant commit for several `PLAN.md` §8 steps at once:
-  - One commit = one self-contained logical change (e.g. "add `accounts_store.py` CRUD" separate from "add `cli.py accounts` subcommand", even though both are part of the same step).
+- **Gitflow with `dev` as staging, one branch per phase:** `main` = always stable/production (what runs on the production host), `dev` = staging/integration — where phase branches get merged and validated before going up to `main`. `PLAN.md` §8 groups the implementation steps into phases (Foundation, Storage Layer, Source Clients, Digest Core, Interfaces, Documentation); each phase gets its own `feature/phase-<n>-<slug>` branch (e.g. `feature/phase-1-foundation`, `feature/phase-2-storage-layer`), branched from an up-to-date `dev` (not from `main`) — **not** a branch per individual step. A phase branch is merged back to `dev` only once every step inside that phase is checked off and smoke-tested together. `dev` only gets merged/promoted to `main` once a few phases have been tried out together in staging and are considered deploy-ready — don't commit directly to `main` or to `dev` for work that isn't a fully finished phase.
+- **Granular commits per logical step within a phase branch** — a phase branch holds several commits, not one giant commit for the whole phase:
+  - One commit = one self-contained logical change (e.g. "add `accounts_store.py` CRUD" separate from "add `cli.py accounts` subcommand", even though both are part of the same phase).
   - Don't mix unrelated concerns in one commit (a new feature + an unrelated refactor + a config change all at once).
   - Commit messages should be short, imperative ("add ...", "fix ...", not "adding..."), describing **what** changed — a long rationale/why belongs in the PR/commit body if needed, not the title.
   - Each commit should ideally leave things in a runnable state (don't leave a half-finished state that makes the branch un-runnable/un-testable at that commit).

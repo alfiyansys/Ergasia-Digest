@@ -1,6 +1,6 @@
 # PLAN.md — Ergasia Digest
 
-A small webservice that pulls activity from GitHub and GitLab — including from multiple accounts at once and multiple GitLab instances (gitlab.com + self-hosted, e.g. GitLab CSRG) — and merges it into a single summary. Account registration (add/list/delete) is **CLI-only**, run directly on the host where the service runs. Digest stats can be accessed via HTTP **or** CLI. Sending to chat (Slack / OpenClaw) is **not** this service's responsibility — that part is deferred to an agentic harness that reads the digest output and sends its own notifications (see §4 and §6).
+A small webservice that pulls activity from GitHub and GitLab — including from multiple accounts at once and multiple GitLab instances (gitlab.com + self-hosted, e.g. an internal company GitLab) — and merges it into a single summary. Account registration (add/list/delete) is **CLI-only**, run directly on the host where the service runs. Digest stats can be accessed via HTTP **or** CLI. Sending to chat (Slack / OpenClaw) is **not** this service's responsibility — that part is deferred to an agentic harness that reads the digest output and sends its own notifications (see §4 and §6).
 
 ## 1. Project Structure
 
@@ -35,40 +35,44 @@ Accounts are **not edited manually via a config file, and not over HTTP at all**
 
 ```json
 {
-  "id": "gitlab-csrg-alfiyan",
+  "id": "gitlab-acme-bob",
   "type": "gitlab",
-  "username": "alfiyan",
-  "base_url": "https://gitlab.csrg.example.com",
+  "username": "bob",
+  "base_url": "https://gitlab.acme.example.com",
+  "label": "GitLab (work)",
   "api_key": "glpat-xxxxxxxxxxxxxxxx"
 }
 ```
 
 Fields:
-- `id` — unique, used as the `last_run` tracking key in `state.py` and as the grouping label in digest output (see §3). Optional on `accounts add`; if omitted, it's auto-generated from `{type}-{host}-{username}` (`host` = `github.com` for GitHub, or the hostname from `base_url` for GitLab).
+- `id` — unique, used as the `last_run` tracking key in `state.py` and for internal lookups (`?account=<id>` / `--account`). Optional on `accounts add`; if omitted, it's auto-generated from `{type}-{host}-{username}` (`host` = `github.com` for GitHub, or the hostname from `base_url` for GitLab). This `id` is **internal only** — it's used in `cli.py`/local API calls, never printed as the platform tag in digest output (that's `label`, below), so it embedding the real self-hosted hostname is not itself an external leak.
 - `type` — `github` or `gitlab`.
 - `username` — username on the relevant platform.
 - `api_key` — personal access token for accessing the GitHub/GitLab Events API on behalf of this account (entered via hidden prompt, see above). **This is different from the service's `API_KEY`** (see §4 Auth) — the term "API key" here refers to the tracked account's own token, not the shared secret that protects Ergasia Digest's HTTP endpoints.
-- `base_url` — **only applies to `type: gitlab`**, optional, defaults to `https://gitlab.com` if left blank (supports a custom/self-hosted GitLab endpoint, e.g. GitLab CSRG). For `type: github`, this field must be left blank/is rejected — GitHub Enterprise custom endpoints aren't supported yet, could be a future step if needed.
+- `base_url` — **only applies to `type: gitlab`**, optional, defaults to `https://gitlab.com` if left blank (supports a custom/self-hosted GitLab endpoint, e.g. an internal company instance). For `type: github`, this field must be left blank/is rejected — GitHub Enterprise custom endpoints aren't supported yet, could be a future step if needed.
+- `label` — optional, free-text display name used as the platform tag in digest output instead of anything derived from `base_url` (see §3). **Recommended when adding a self-hosted GitLab account** — pick something that doesn't reveal internal infra naming (e.g. `GitLab (work)` rather than the real hostname). If omitted for a self-hosted account, digest output falls back to a generic `GitLab (self-hosted)` tag (see §3) rather than ever printing the real hostname.
 
 **CLI commands:**
 
 ```
-$ python cli.py accounts add --type github --username alfiyansys
+$ python cli.py accounts add --type github --username alice
 Account API key (hidden input): ****************
-Account added: github-github.com-alfiyansys
+Account added: github-github.com-alice
 
-$ python cli.py accounts add --type gitlab --username alfiyan --base-url https://gitlab.csrg.example.com
+$ python cli.py accounts add --type gitlab --username bob --base-url https://gitlab.acme.example.com --label "GitLab (work)"
 Account API key (hidden input): ****************
-Account added: gitlab-csrg.example.com-alfiyan
+Account added: gitlab-acme.example.com-bob
 
 $ python cli.py accounts list
-ID                                  TYPE    USERNAME     BASE_URL                    LAST_RUN
-github-github.com-alfiyansys        github  alfiyansys   github.com                  2026-07-24T21:00:00+07:00
-gitlab-csrg.example.com-alfiyan     gitlab  alfiyan      gitlab.csrg.example.com     -
+ID                                TYPE    USERNAME  BASE_URL                   LABEL           LAST_RUN
+github-github.com-alice           github  alice     github.com                 -               2026-07-24T21:00:00+07:00
+gitlab-acme.example.com-bob        gitlab  bob       gitlab.acme.example.com    GitLab (work)   -
 
-$ python cli.py accounts delete gitlab-csrg.example.com-alfiyan
-Account 'gitlab-csrg.example.com-alfiyan' deleted.
+$ python cli.py accounts delete gitlab-acme.example.com-bob
+Account 'gitlab-acme.example.com-bob' deleted.
 ```
+
+`accounts list` still shows the real `base_url` — this command only runs locally on the trusted host (§2/§7), so there's no external-exposure concern there. The masking below only applies to what gets rendered into digest output, since that text is what leaves the host (sent to chat by the harness).
 
 Rules:
 - `type: gitlab` can be registered multiple times with different `base_url`s (gitlab.com, other self-hosted GitLab instances) — no separate instance needed, just a new `accounts add`.
@@ -93,16 +97,18 @@ Example (two accounts):
 
 ```
 Platform: GitHub
-Username: alfiyansys
+Username: alice
 Activities: 8 commits created, 2 pull requests opened, 1 pull request merged, 3 issues closed
 
-Platform: GitLab (gitlab.csrg.example.com)
-Username: alfiyan
+Platform: GitLab (work)
+Username: bob
 Activities: 5 commits created, 1 merge request opened
 ```
 
 Rules:
-- **Platform label** — `GitHub` for `type: github`; `GitLab` if `base_url` is the default (gitlab.com); `GitLab (<hostname>)` if `base_url` is custom/self-hosted. Using the hostname (not just a generic "GitLab") keeps things distinguishable when there's more than one GitLab account (gitlab.com + self-hosted, or several self-hosted at once).
+- **Platform label** — `GitHub` for `type: github` (no host ever needed, only github.com is supported); `GitLab` if `base_url` is the default (gitlab.com — a public, well-known host, not sensitive); the account's `label` verbatim (§2) if one is set — this is the normal way to distinguish self-hosted GitLab accounts, since `label` is a value the user chooses, not derived from the real host; falls back to a generic `GitLab (self-hosted)` if `base_url` is custom/self-hosted **and no `label` was set**.
+  **The real hostname from `base_url` must never be rendered here.** Digest text leaves the host and gets sent to chat by an external harness (§6), so printing internal infra naming there is a real exposure — unlike `cli.py accounts list` (§2), which stays local and can show it.
+  If two or more self-hosted GitLab accounts are both left without a `label`, they'll render with the identical generic `GitLab (self-hosted)` tag and only be distinguishable by `Username` — set distinct `label`s when adding accounts if that ambiguity matters.
 - **Minimum metric:** `commits created` (from push events) — must always be shown, including when the value is 0.
 - **Other metrics (for personal esteem)** — computed from whatever events are available in each platform's Events API, using platform-correct terminology (GitHub: "pull request"; GitLab: "merge request"):
   - pull/merge requests opened
@@ -113,6 +119,7 @@ Rules:
 - Metrics with a value of 0 **other than** commits may be dropped from the `Activities` sentence, so it doesn't get noisy/long on quiet days (e.g. no MRs merged → don't write "0 merge requests merged").
 - If an account fails to fetch during this window (see the failure rules in §2), its block **still appears** (not silently skipped) with `Activities: fetch failed (<short reason, e.g. rate limit>)` — so it's visible that an account needs attention (expired token, etc.) instead of just vanishing from the digest without a trace.
 - This is the human-readable rendering generated from the underlying per-account data structure: `{ "account_id", "platform", "username", "metrics": { "commits_created", "prs_or_mrs_opened", "prs_or_mrs_merged", "issues_opened", "issues_closed" }, "error"? }`. HTTP (`/digest/preview`, `/digest/run`'s response, `/digest/latest`) returns this text (ready to send to chat by the harness) combined with the raw data structure in a single JSON payload; the CLI (`cli.py digest ...`) prints the text version directly to stdout.
+- **Caution for the harness:** `account_id` in that JSON payload can still be derived from the real self-hosted hostname (§2, e.g. `gitlab-acme.example.com-bob`), since it's only ever used internally (state tracking, `?account=` filtering) and was never in scope for the masking above. The raw JSON is HTTP/CLI output gated by `API_KEY`/host access (§4) — the harness should only forward the rendered `platform`/text fields to chat, never paste the raw payload (including `account_id`) into an external channel.
 
 ## 4. HTTP Endpoints (Planned) & CLI Access
 
@@ -129,7 +136,7 @@ HTTP endpoints are **read-only for digest data** — there is no endpoint for ma
 
 ```
 $ python cli.py digest preview --hours 6
-$ python cli.py digest preview --account gitlab-csrg.example.com-alfiyan --days 3
+$ python cli.py digest preview --account gitlab-acme.example.com-bob --days 3
 $ python cli.py digest run       # equivalent to POST /digest/run: updates state + cache
 $ python cli.py digest latest    # equivalent to GET /digest/latest
 ```
@@ -162,21 +169,71 @@ The service still runs continuously (systemd unit / uvicorn) so it can be called
 
 ## 7. Deployment
 
-- Run via `uvicorn app:app --host 127.0.0.1 --port 8000` behind a systemd service, following the same pattern as other services on `invis`.
-- No need to expose it externally — localhost is enough, with an optional Nginx reverse proxy if it needs to be reachable from outside `invis`.
-- `cli.py` can/should only be run directly on the host where `accounts.json` lives (local filesystem access) — not exposed over the network. If accounts need to be managed from outside `invis`, that access should go through SSH to the host, not a new HTTP endpoint built for it.
-- `accounts.json` contains raw tokens for every account — make sure its file permissions are `600`, it's in `.gitignore`, and it's included in backups (if `invis` has a backup mechanism) so account tokens aren't lost if the file gets corrupted or deleted.
+- Run via `uvicorn app:app --host 127.0.0.1 --port 8000` behind a systemd service, following the same pattern as other services on the production host.
+- No need to expose it externally — localhost is enough, with an optional Nginx reverse proxy if it needs to be reachable from outside the host.
+- `cli.py` can/should only be run directly on the host where `accounts.json` lives (local filesystem access) — not exposed over the network. If accounts need to be managed remotely, that access should go through SSH to the host, not a new HTTP endpoint built for it.
+- `accounts.json` contains raw tokens for every account — make sure its file permissions are `600`, it's in `.gitignore`, and it's included in whatever backup mechanism the host has, so account tokens aren't lost if the file gets corrupted or deleted.
 
 ## 8. Next Steps
 
-1. Write `accounts_store.py` — account CRUD (`add`/`list`/`delete`, reads/writes `accounts.json`), including field validation per §2 (id auto-generation + uniqueness, `base_url` only for gitlab) and masking `api_key` when listing.
-2. Refactor `sources/github_source.py` and `sources/gitlab_source.py` to accept `(base_url, username, token, since)` as function parameters instead of reading env vars directly — `since` is a prerequisite for multi-account support and for the `hours`/`days` window feature.
-3. Refactor `digest.py`: `fetch_all_events(since_override=None)` iterates over accounts from `accounts_store.py` and tags each event with `account_id`. If `since_override` is set (from `hours`/`days`), use it for every account being fetched; otherwise use each account's `last_run` from `state.py`, or `DEFAULT_LOOKBACK_HOURS = 24` if the account has never had a `last_run`. `build_digest()` computes per-account metrics (commits created, PR/MR opened & merged, issues opened & closed) and renders each account per the §3 format, including the platform label and handling of accounts that failed to fetch (basic logic already exists, just needs cleaned-up imports and removal of the `if __name__ == "__main__"` section).
-4. Update `state.py`: change the tracking key from per-source to per-`account_id`, and add a function to clean up an entry when an account is deleted.
-5. Write `cli.py` — the `accounts add/list/delete` subcommand (using `getpass` for `api_key`, calling `accounts_store.py` directly) and `digest preview/run/latest` (calling `digest.py`/`state.py` directly, printing the §3 format to stdout).
-6. Write `app.py` — a FastAPI app with the read-only HTTP endpoints in §4 (`/health`, `/digest/preview` with `?account=`/`?hours=`/`?days=` filters, `/digest/run`, `/digest/latest`) plus API key middleware. **No** `/accounts` endpoint over HTTP. `/digest/run` **does not** call `notify.py` — just fetch + build + update state + cache for `/digest/latest`.
-7. Update `state.py` (continued) if it also needs to store a "last digest text" cache for the `/digest/latest` endpoint.
-8. Update `.gitignore` (+`accounts.json`) and `requirements.txt` (+`fastapi`, +`uvicorn`).
-9. Write `README.md` — how to install, what goes in `.env`, how to add/list/delete accounts via `cli.py`, how to check the digest via HTTP or CLI, running locally, systemd + cron setup.
+Work is organized into phases. Each phase gets its own `feature/phase-<n>-<slug>` branch, cut from an up-to-date `dev` (never from `main`) — not a branch per individual step. All steps inside a phase are done, checked off, and smoke-tested together on that branch before it's merged back into `dev`; only after that does `dev` ever get promoted to `main` (see `AGENTS.md` Git Workflow). Within a phase, commits still stay granular per lettered sub-step — a phase branch holds several commits, not one.
 
-Once this plan is approved, proceed with steps 1–9.
+### Phase 1 — Foundation & Safety Net (`feature/phase-1-foundation`)
+
+- [ ] **1. Project scaffolding & safety net** — do this *before* anything can create a real `accounts.json` or needs `fastapi`/`uvicorn` installed:
+  - [ ] a. `.gitignore` (exclude `accounts.json`, `.env`, `__pycache__/`, `.venv/`, etc.)
+  - [ ] b. `.env.example` (`API_KEY=`, `PORT=8000`)
+  - [ ] c. `accounts.example.json` documenting the §2 schema (one github + one gitlab example entry, fake tokens)
+  - [ ] d. `requirements.txt` (+`fastapi`, +`uvicorn`)
+
+  > This exists specifically so `.gitignore` is committed before step 2 can ever write a real `accounts.json` into the working tree, and so `fastapi`/`uvicorn` are already available by the time `app.py` (step 7) needs them.
+
+### Phase 2 — Storage Layer (`feature/phase-2-storage-layer`)
+
+- [ ] **2. `accounts_store.py`** — account CRUD:
+  - [ ] a. Schema (dataclass/typed dict, including optional `label`) + `load_accounts()`/`save_accounts()` (create an empty store if missing)
+  - [ ] b. `generate_id(type, username, base_url)` → `{type}-{host}-{username}` (internal `id` only — never rendered in digest output, see §3)
+  - [ ] c. `add_account(...)` with validation (type in {github, gitlab}; `base_url` only for gitlab; `label` accepted for either type; reject duplicate id)
+  - [ ] d. `list_accounts()` with `api_key` masked (last 4 chars) — `base_url`/`label` shown as-is, this output stays local (§2)
+  - [ ] e. `delete_account(id)`
+
+- [ ] **3. `state.py`** — do the per-account refactor and the digest cache in the same step, since both are needed before steps 5–7 build anything that reads "latest":
+  - [ ] a. Change the tracking key from per-source to per-`account_id`: `get_last_run(account_id)` / `set_last_run(account_id, ts)`
+  - [ ] b. `delete_account_state(account_id)` — called from `accounts_store.delete_account` / `cli.py accounts delete`
+  - [ ] c. `save_latest_digest(text, data)` / `get_latest_digest()` — the backing store for `/digest/latest` and `cli.py digest latest`
+
+### Phase 3 — Source Clients (`feature/phase-3-source-clients`)
+
+- [ ] **4. Refactor `sources/github_source.py` and `sources/gitlab_source.py`**:
+  - [ ] a. Accept `(username, token, since)` / `(base_url, username, token, since)` as parameters — no direct env var reads
+  - [ ] b. Normalize both clients' output into one shared event shape, so `digest.py` doesn't need platform-specific branching to compute metrics
+
+### Phase 4 — Digest Core (`feature/phase-4-digest-core`)
+
+- [ ] **5. Refactor `digest.py`**:
+  - [ ] a. `fetch_all_events(since_override=None)` — resolve per-account `since` (override > `last_run` > `DEFAULT_LOOKBACK_HOURS = 24`), call the matching source client, catch per-account fetch failures without stopping the loop
+  - [ ] b. Compute per-account metrics (commits created; PR/MR opened & merged; issues opened & closed) from the normalized events
+  - [ ] c. `platform_label(account)` → `GitHub` / `GitLab` / account's `label` if set / generic `GitLab (self-hosted)` fallback — **never** the real `base_url` hostname (see §3)
+  - [ ] d. `build_digest(...)` — render the §3 text format + structured data, including the "fetch failed" block variant
+  - [ ] e. Delete the legacy `if __name__ == "__main__"` CLI entrypoint
+
+### Phase 5 — Interfaces (`feature/phase-5-interfaces`)
+
+- [ ] **6. `cli.py`**:
+  - [ ] a. `accounts add` (`--label` flag for the digest-safe display name; `getpass` prompt for `api_key`; calls `accounts_store.add_account`)
+  - [ ] b. `accounts list` / `accounts delete` (join `last_run` from `state.py` for `list`; call `state.py` cleanup on `delete`)
+  - [ ] c. `digest preview` (`--account`/`--hours`/`--days`, mutually-exclusive validation)
+  - [ ] d. `digest run` / `digest latest`
+
+- [ ] **7. `app.py`**:
+  - [ ] a. FastAPI skeleton + `X-API-Key` auth dependency (`secrets.compare_digest`)
+  - [ ] b. `GET /health`
+  - [ ] c. `GET /digest/preview` (query params + mutual-exclusivity validation → `400`)
+  - [ ] d. `POST /digest/run` (no `notify.py` call)
+  - [ ] e. `GET /digest/latest`
+
+### Phase 6 — Documentation (`feature/phase-6-docs`)
+
+- [ ] **8. `README.md`** — install, `.env` setup, `cli.py` usage (accounts + digest examples), running locally, systemd unit + cron/harness note.
+
+Once this plan is approved, proceed phase by phase in order, checking off each box as it's completed and merging each phase branch into `dev` before starting the next.
