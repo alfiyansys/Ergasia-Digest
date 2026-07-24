@@ -29,6 +29,7 @@ cp .env.example .env
 ```
 API_KEY=<a long random string>
 PORT=8000
+HOST=127.0.0.1
 ```
 
 `API_KEY` protects every HTTP endpoint via the `X-API-Key` header. It's
@@ -136,8 +137,13 @@ chosen deliberately in exchange for a much simpler, fully stateless design.
 ## Running locally
 
 ```
-.venv/bin/uvicorn app:app --host 127.0.0.1 --port 8000
+.venv/bin/python run.py
 ```
+
+Reads `HOST`/`PORT` from `.env` (defaults to `127.0.0.1:8000` if unset).
+Running `uvicorn app:app` directly instead works too, but then `--host`/
+`--port` have to be passed on the command line by hand — `.env`'s
+`HOST`/`PORT` are only read by `run.py`.
 
 ## Deployment
 
@@ -152,7 +158,7 @@ After=network.target
 [Service]
 WorkingDirectory=/path/to/ergasia-digest
 EnvironmentFile=/path/to/ergasia-digest/.env
-ExecStart=/path/to/ergasia-digest/.venv/bin/uvicorn app:app --host 127.0.0.1 --port 8000
+ExecStart=/path/to/ergasia-digest/.venv/bin/python run.py
 Restart=on-failure
 
 [Install]
@@ -175,6 +181,11 @@ is unreachable from outside the host — same posture as the bare-metal
 setup above. `accounts.json` lives in `./data` on the host (bind-mounted),
 so it survives container rebuilds/restarts (there's no `state.json` — see
 "Checking the digest" above, this project keeps no persistent state).
+
+Note: `HOST` in `.env` has **no effect** here — the container always binds
+`0.0.0.0` internally (hardcoded in the `Dockerfile`), which is required for
+Docker's port mapping to reach it at all. The loopback-only restriction
+above comes from the `docker-compose.yml` port publish, not from `HOST`.
 
 Account management is still CLI-only — with Docker, that means running
 `cli.py` inside the running container instead of directly on host shell:

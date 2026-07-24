@@ -169,6 +169,7 @@ $ python cli.py digest run       # default window, see below
 Accounts (and their tokens) are managed via `cli.py` (§2), not `.env`. `.env` only needs to contain:
 - `API_KEY` — shared secret protecting the HTTP endpoints (different from the per-account `api_key`, see §2/§4).
 - `PORT` — defaults to `8000`.
+- `HOST` — interface to bind to, defaults to `127.0.0.1`. Only read by `run.py` (bare-metal/systemd/Pyker, see §7/§8 Phase 8) — Docker's container always binds `0.0.0.0` internally regardless of this value, hardcoded in the `Dockerfile`, since that's required for Docker's port mapping to reach it at all (see §7's Docker note).
 
 ## 6. Trigger Flow
 
@@ -185,7 +186,7 @@ The service still runs continuously (systemd unit / uvicorn) so it can be called
 ## 7. Deployment
 
 **Bare-metal (default):**
-- Run via `uvicorn app:app --host 127.0.0.1 --port 8000` behind a systemd service, following the same pattern as other services on the production host.
+- Run via `python run.py` (reads `HOST`/`PORT` from `.env`, defaults to `127.0.0.1:8000` — see §5) behind a systemd service, following the same pattern as other services on the production host. Running `uvicorn app:app --host ... --port ...` directly also works, but then those values have to be passed explicitly instead of coming from `.env`.
 - No need to expose it externally — localhost is enough, with an optional Nginx reverse proxy if it needs to be reachable from outside the host.
 - `cli.py` can/should only be run directly on the host where `accounts.json` lives (local filesystem access) — not exposed over the network. If accounts need to be managed remotely, that access should go through SSH to the host, not a new HTTP endpoint built for it.
 - `accounts.json` contains raw tokens for every account — make sure its file permissions are `600`, it's in `.gitignore`, and it's included in whatever backup mechanism the host has, so account tokens aren't lost if the file gets corrupted or deleted.
@@ -275,7 +276,7 @@ Added after the original 6-phase plan was completed, per a follow-up request to 
 Added after Phase 7, per a follow-up request: [mrvi0/pyker](https://github.com/mrvi0/pyker), a lightweight no-root Python process manager — unrelated to Docker/containers, see §7 for the caveat found by reading its source.
 
 - [x] **8.1. `run.py` entrypoint + dependency**:
-  - [x] a. `run.py` — loads `.env` via `python-dotenv`, then `uvicorn.run("app:app", host="127.0.0.1", port=...)`. Needed because Pyker's CLI runs a plain `.py` script directly (`pyker start <name> <script.py>`), not an arbitrary command line — there's no other way to hand it an ASGI app.
+  - [x] a. `run.py` — loads `.env` via `python-dotenv`, then `uvicorn.run("app:app", host=os.environ.get("HOST", "127.0.0.1"), port=int(os.environ.get("PORT", 8000)))`. Needed because Pyker's CLI runs a plain `.py` script directly (`pyker start <name> <script.py>`), not an arbitrary command line — there's no other way to hand it an ASGI app. Later also adopted as the canonical bare-metal/systemd entrypoint (§7), since it's the one place `HOST`/`PORT` from `.env` actually get respected — the systemd example previously hardcoded `--host 127.0.0.1 --port 8000` on the `uvicorn` command line, silently ignoring `.env`.
   - [x] b. Add `python-dotenv` to `requirements.txt` — Pyker has no declarative env-file mechanism the way systemd (`EnvironmentFile=`) or docker-compose (`env_file:`) do, so `run.py` loads `.env` itself rather than depending on the invoking shell already having `API_KEY`/`PORT` exported.
 - [x] **8.2. Update `README.md`** with a Pyker section: install, `pyker start ergasia-digest run.py --venv ./.venv`, `stop`/`restart`/`list`/`logs`, and the `--auto-restart` caveat from §7 stated plainly (not enforced by any monitor as of the reviewed source).
 
