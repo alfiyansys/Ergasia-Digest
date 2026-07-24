@@ -6,7 +6,7 @@ A small FastAPI webservice that pulls activity from GitHub + GitLab (multi-accou
 
 ## Status
 
-No code yet — just `PLAN.md`. If asked to "continue the implementation" without further detail, follow the step order in `PLAN.md` §8 as-is — don't reorder or skip steps without asking.
+Progress is tracked via the checkboxes in `PLAN.md` §8 — check there for what's actually done rather than trusting this file's wording, since it can go stale. As of Phase 1, only scaffolding exists (`.gitignore`, `.env.example`, `accounts.example.json`, `requirements.txt`); every module (`accounts_store.py`, `state.py`, `sources/*.py`, `digest.py`, `cli.py`, `app.py`) is being written from scratch, not refactored from prior code — an earlier draft of `PLAN.md` wrongly assumed some of these already existed; that assumption was corrected once no such files turned up anywhere on disk. If asked to "continue the implementation" without further detail, follow the phase/step order in `PLAN.md` §8 as-is — don't reorder or skip steps without asking.
 
 **Check off the corresponding `- [ ]` box in `PLAN.md` §8 (`- [ ]` → `- [x]`) as soon as a step or lettered sub-step is actually done** — include that edit in the same commit as the step itself, not as a separate batch-update pass later. `PLAN.md` §8 is the one place progress is tracked across sessions, so an unchecked box must mean "not done yet," not "done but forgot to mark it."
 
@@ -26,7 +26,7 @@ No code yet — just `PLAN.md`. If asked to "continue the implementation" withou
 ## Code conventions (planned — follow once `app.py`/`cli.py` are built)
 
 - `digest.py` (`fetch_all_events()`, `build_digest()`) must stay pure functions — shared by both `app.py` (HTTP) and `cli.py` (CLI) with no logic duplication. If adding a digest feature, put the logic here, not in `app.py`/`cli.py`.
-- `sources/github_source.py` and `sources/gitlab_source.py` take credentials/parameters (`base_url`, `username`, `token`, `since`) as function arguments — don't read env vars directly inside these modules (that's what made multi-account support hard in the first place).
+- `sources/github_source.py` and `sources/gitlab_source.py` take credentials/parameters (`base_url`, `username`, `token`, `since`) as function arguments — don't read env vars directly inside these modules, since that would make multi-account support impossible (there's no single "the" token/host once there's more than one account).
 - `state.py` tracks the `last_run` key per `account_id`, not per-source.
 
 ## Git Workflow
