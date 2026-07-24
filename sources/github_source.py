@@ -106,3 +106,25 @@ def fetch_events(username: str, token: str, since: datetime) -> list[dict]:
         page += 1
 
     return normalized
+
+
+def verify_access(username: str, token: str) -> tuple[bool, str]:
+    """Live, minimal call confirming the token authenticates and can read
+    `username`'s events. Does NOT require any events to exist — a valid,
+    empty result is a pass (see PLAN.md §2 — this is an access check, not
+    an activity check). Used by cli.py accounts add before persisting."""
+    resp = requests.get(
+        f"{GITHUB_API_BASE}/users/{username}/events",
+        headers=_headers(token),
+        params={"per_page": 1},
+        timeout=REQUEST_TIMEOUT,
+    )
+    if resp.status_code == 200:
+        return True, "ok"
+    if resp.status_code == 401:
+        return False, "token is invalid or expired"
+    if resp.status_code == 403:
+        return False, "token is valid but forbidden (missing scope or rate limited)"
+    if resp.status_code == 404:
+        return False, f"username '{username}' not found"
+    return False, f"unexpected response from GitHub API: {resp.status_code}"

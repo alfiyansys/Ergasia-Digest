@@ -113,3 +113,37 @@ def fetch_events(base_url: str, username: str, token: str, since: datetime) -> l
         page += 1
 
     return normalized
+
+
+def verify_access(base_url: str, username: str, token: str) -> tuple[bool, str]:
+    """Live, minimal call confirming the token authenticates, belongs to
+    `username`, and can read that user's events. Does NOT require any
+    events to exist — a valid, empty result is a pass (see PLAN.md §2 —
+    this is an access check, not an activity check). Used by cli.py
+    accounts add before persisting."""
+    resp = requests.get(f"{base_url}/api/v4/user", headers=_headers(token), timeout=REQUEST_TIMEOUT)
+    if resp.status_code == 401:
+        return False, "token is invalid or expired"
+    if resp.status_code != 200:
+        return False, f"unexpected response from GitLab API: {resp.status_code}"
+
+    actual_username = resp.json().get("username")
+    if actual_username != username:
+        return False, f"token belongs to '{actual_username}', not '{username}'"
+
+    try:
+        user_id = _resolve_user_id(base_url, username, token)
+    except SourceError as e:
+        return False, str(e)
+
+    events_resp = requests.get(
+        f"{base_url}/api/v4/users/{user_id}/events",
+        headers=_headers(token),
+        params={"per_page": 1},
+        timeout=REQUEST_TIMEOUT,
+    )
+    if events_resp.status_code == 200:
+        return True, "ok"
+    if events_resp.status_code == 403:
+        return False, "token is valid but missing 'read_api' scope (needed to read events)"
+    return False, f"unexpected response reading events: {events_resp.status_code}"
