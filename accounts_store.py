@@ -12,7 +12,10 @@ from dataclasses import asdict, dataclass
 from typing import Optional
 from urllib.parse import urlparse
 
-ACCOUNTS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "accounts.json")
+ACCOUNTS_FILE = os.environ.get(
+    "ACCOUNTS_FILE",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "accounts.json"),
+)
 DEFAULT_GITLAB_BASE_URL = "https://gitlab.com"
 VALID_TYPES = {"github", "gitlab"}
 

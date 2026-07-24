@@ -257,10 +257,10 @@ Work is organized into phases. Each phase gets its own `feature/phase-<n>-<slug>
 
 Added after the original 6-phase plan was completed, per a follow-up request to make the service runnable via Docker.
 
-- [ ] **7.1. Env-var overrides for data file paths**:
-  - [ ] a. `accounts_store.py`: `ACCOUNTS_FILE = os.environ.get("ACCOUNTS_FILE", <default next-to-source path>)` — same default as before if unset, so bare-metal/CLI usage is unaffected
-  - [ ] b. `state.py`: same pattern for `STATE_FILE`
-  - [ ] c. Rationale: bind-mounting *individual files* that don't yet exist is a known Docker footgun (Docker can silently create a directory instead of a file); mounting a whole `/data` directory and pointing both files at it via env var avoids that entirely, without changing bare-metal behavior at all
+- [x] **7.1. Env-var overrides for data file paths**:
+  - [x] a. `accounts_store.py`: `ACCOUNTS_FILE = os.environ.get("ACCOUNTS_FILE", <default next-to-source path>)` — same default as before if unset, so bare-metal/CLI usage is unaffected
+  - [x] b. `state.py`: same pattern for `STATE_FILE`
+  - [x] c. Rationale: bind-mounting *individual files* that don't yet exist is a known Docker footgun (Docker can silently create a directory instead of a file); mounting a whole `/data` directory and pointing both files at it via env var avoids that entirely, without changing bare-metal behavior at all
 - [ ] **7.2. `Dockerfile` + `.dockerignore`**:
   - [ ] a. `Dockerfile`: `python:3.12-slim` base, install `requirements.txt`, copy source, `EXPOSE 8000`, `CMD uvicorn app:app --host 0.0.0.0 --port 8000` (must be `0.0.0.0` inside the container — see §7 note on why this doesn't weaken the "not exposed externally" posture)
   - [ ] b. `.dockerignore`: exclude `.venv/`, `__pycache__/`, `.git/`, `accounts.json`, `state.json`, `.env` — none of those belong baked into an image
