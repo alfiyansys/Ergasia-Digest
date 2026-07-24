@@ -130,6 +130,31 @@ def cmd_digest_preview(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_digest_run(args: argparse.Namespace) -> int:
+    """Equivalent to POST /digest/run: fetch + build + update state + cache.
+    No --hours/--days override (see PLAN.md §4) — always incremental via
+    last_run, so state never gets a gap or overlap."""
+    results = digest.fetch_all_events()
+    rendered = digest.build_digest(results)
+
+    for result in results:
+        if "error" not in result:
+            state.set_last_run(result["account"]["id"], result["fetched_at"])
+
+    state.save_latest_digest(rendered["text"], rendered["data"])
+    print(rendered["text"])
+    return 0
+
+
+def cmd_digest_latest(args: argparse.Namespace) -> int:
+    latest = state.get_latest_digest()
+    if latest is None:
+        print("No digest has been generated yet.")
+        return 0
+    print(latest["text"])
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="cli.py", description="Ergasia Digest CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -160,6 +185,12 @@ def build_parser() -> argparse.ArgumentParser:
     preview_parser.add_argument("--hours", type=int, default=None)
     preview_parser.add_argument("--days", type=int, default=None)
     preview_parser.set_defaults(func=cmd_digest_preview)
+
+    run_parser = digest_sub.add_parser("run", help="Run the digest: fetch, build, update state, cache result")
+    run_parser.set_defaults(func=cmd_digest_run)
+
+    latest_parser = digest_sub.add_parser("latest", help="Show the last generated digest")
+    latest_parser.set_defaults(func=cmd_digest_latest)
 
     return parser
 
