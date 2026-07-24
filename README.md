@@ -133,6 +133,41 @@ WantedBy=multi-user.target
 its permissions stay `600` (the CLI sets this automatically) and that it's
 included in whatever backup mechanism the host has.
 
+### Docker (alternative to systemd)
+
+```
+cp .env.example .env   # fill in API_KEY
+docker compose up -d --build
+```
+
+The port is published to `127.0.0.1` only (not `0.0.0.0`), so the container
+is unreachable from outside the host — same posture as the bare-metal
+setup above. `accounts.json`/`state.json` live in `./data` on the host
+(bind-mounted), so they survive container rebuilds/restarts.
+
+Account management is still CLI-only — with Docker, that means running
+`cli.py` inside the running container instead of directly on host shell:
+
+```
+docker compose exec ergasia-digest python cli.py accounts add --type github --username alice
+docker compose exec ergasia-digest python cli.py accounts list
+docker compose exec ergasia-digest python cli.py digest run
+```
+
+This isn't a workaround — it's the same security model as bare-metal, just
+with the gate being Docker daemon access (root/`docker` group) instead of
+SSH. There's no HTTP endpoint for account management in either mode.
+
+Docker Swarm is not recommended for this project: it's a single stateful
+instance by design (one `accounts.json`, one `state.json`), and a plain
+host-path bind mount like `./data` only stays consistent if the container
+never gets rescheduled to a different node — which Swarm's scheduler does
+by default. If you need to run this under Swarm anyway, pin it with
+`deploy.replicas: 1` and a `placement.constraints` entry for a specific
+node; otherwise a rescheduled container will start with an empty
+`accounts.json`/`state.json` (the original data isn't deleted, just
+inaccessible from wherever the container landed).
+
 ## Triggering the daily digest
 
 In production, an agentic harness — not a raw system crontab — is

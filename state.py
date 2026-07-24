@@ -7,7 +7,10 @@ import os
 from datetime import datetime
 from typing import Optional
 
-STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "state.json")
+STATE_FILE = os.environ.get(
+    "STATE_FILE",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "state.json"),
+)
 
 
 def _load_state() -> dict:
