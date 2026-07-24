@@ -23,7 +23,7 @@ ergasia-digest/
 └── README.md                 # Install, config, deploy, cron instructions
 ```
 
-**Current status:** `sources/`, `state.py`, and `notify.py` already exist and have passed a smoke test (the `build_digest` logic runs), but are still the old single-account/single-endpoint version — they need refactoring to accept `(base_url, username, token)` as parameters instead of reading straight from env vars, so they can be reused per account. `digest.py` is still the old CLI version and needs to be stripped down to pure functions plus a multi-account loop. `app.py`, `cli.py`, and `accounts_store.py` don't exist yet.
+**Current status (as of Phase 1):** `.gitignore`, `.env.example`, `accounts.example.json`, and `requirements.txt` are done. Everything else — `accounts_store.py`, `state.py`, `sources/github_source.py`, `sources/gitlab_source.py`, `digest.py`, `cli.py`, `app.py`, `README.md` — is being written from scratch; none of it pre-exists anywhere. (An earlier draft of this plan assumed `sources/`, `state.py`, and `notify.py` already existed from prior work — that turned out to be wrong, no such files were found on disk, so §8 below is written as greenfield implementation, not a refactor of existing code. `notify.py` is deferred per §4 and isn't being written in any phase below; it can be added later if the harness ever needs a direct-send fallback.)
 
 ## 2. Account Management (CLI-only) & Multi-GitLab-Endpoint
 
@@ -161,7 +161,7 @@ $ python cli.py digest latest    # equivalent to GET /digest/latest
 
 **Window parameter (`/digest/preview` & `cli.py digest preview`):** besides `?account=<id>` (or `--account`), both also accept `hours=<N>` or `days=<N>` (pick one — an error if both are set at once) to override the fetch window to "the last N hours/days from now," regardless of each account's `last_run`. Useful for ad-hoc checks, e.g. "what happened in the last 3 days" without waiting on/caring about incremental state. If this parameter isn't provided, the default behavior applies: fetch since each account's `last_run`, or `DEFAULT_LOOKBACK_HOURS = 24` if the account is newly added and has never had a `last_run`. This is also the effective window for the harness's daily call (see §6) — since it's called once every 24 hours, `last_run` is always ~24 hours back, consistent with the default 24-hour window when no parameter is given. This parameter is deliberately **not supported** on `/digest/run`/`cli.py digest run` — both must stay consistent with incremental `last_run` so a custom window never creates a gap or overlap when used to update state.
 
-**Note on notify.py:** this module already exists and has been smoke-tested, but for now it isn't called from any endpoint or command. Sending notifications is deferred to the agentic harness so it can be more flexible (e.g. LLM-based filtering/formatting before sending). Wiring `notify.py` into `/digest/run` can be revisited later if the harness ever needs a direct-send fallback from the service.
+**Note on notify.py:** this module is **not** part of any phase in §8 — sending notifications is deferred to the agentic harness so it can be more flexible (e.g. LLM-based filtering/formatting before sending), so there's nothing to build here for now. If the harness ever needs a direct-send fallback from the service, add `notify.py` and wire it into `/digest/run` as its own future phase, revisited explicitly rather than assumed.
 
 ## 5. Configuration (`.env`)
 
@@ -211,26 +211,25 @@ Work is organized into phases. Each phase gets its own `feature/phase-<n>-<slug>
   - [ ] d. `list_accounts()` with `api_key` masked (last 4 chars) — `base_url`/`label` shown as-is, this output stays local (§2)
   - [ ] e. `delete_account(id)`
 
-- [ ] **3. `state.py`** — do the per-account refactor and the digest cache in the same step, since both are needed before steps 5–7 build anything that reads "latest":
+- [ ] **3. `state.py`** — write per-account tracking and the digest cache together in the same step, since both are needed before steps 5–7 build anything that reads "latest":
   - [ ] a. Change the tracking key from per-source to per-`account_id`: `get_last_run(account_id)` / `set_last_run(account_id, ts)`
   - [ ] b. `delete_account_state(account_id)` — called from `accounts_store.delete_account` / `cli.py accounts delete`
   - [ ] c. `save_latest_digest(text, data)` / `get_latest_digest()` — the backing store for `/digest/latest` and `cli.py digest latest`
 
 ### Phase 3 — Source Clients (`feature/phase-3-source-clients`)
 
-- [ ] **4. Refactor `sources/github_source.py` and `sources/gitlab_source.py`**:
+- [ ] **4. Write `sources/github_source.py` and `sources/gitlab_source.py`**:
   - [ ] a. Accept `(username, token, since)` / `(base_url, username, token, since)` as parameters — no direct env var reads
   - [ ] b. Normalize both clients' output into one shared event shape, so `digest.py` doesn't need platform-specific branching to compute metrics
   - [ ] c. Add `verify_access(username, token)` / `verify_access(base_url, username, token)` — a live, minimal call to confirm auth succeeds and the token can read that account's events (used by `cli.py accounts add`, see Phase 5); returns ok/reason, doesn't require any events to actually exist
 
 ### Phase 4 — Digest Core (`feature/phase-4-digest-core`)
 
-- [ ] **5. Refactor `digest.py`**:
+- [ ] **5. Write `digest.py`**:
   - [ ] a. `fetch_all_events(since_override=None)` — resolve per-account `since` (override > `last_run` > `DEFAULT_LOOKBACK_HOURS = 24`), call the matching source client, catch per-account fetch failures without stopping the loop
   - [ ] b. Compute per-account metrics (commits created; PR/MR opened & merged; issues opened & closed) from the normalized events
   - [ ] c. `platform_label(account)` → `GitHub` / `GitLab` / account's `label` if set / generic `GitLab (self-hosted)` fallback — **never** the real `base_url` hostname (see §3)
   - [ ] d. `build_digest(...)` — render the §3 text format + structured data, including the "fetch failed" block variant
-  - [ ] e. Delete the legacy `if __name__ == "__main__"` CLI entrypoint
 
 ### Phase 5 — Interfaces (`feature/phase-5-interfaces`)
 
