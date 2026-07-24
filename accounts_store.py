@@ -14,6 +14,11 @@ from urllib.parse import urlparse
 
 ACCOUNTS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "accounts.json")
 DEFAULT_GITLAB_BASE_URL = "https://gitlab.com"
+VALID_TYPES = {"github", "gitlab"}
+
+
+class AccountError(ValueError):
+    """Raised for invalid account fields or a duplicate id."""
 
 
 @dataclass
@@ -51,3 +56,44 @@ def save_accounts(accounts: list[dict]) -> None:
         json.dump(accounts, f, indent=2)
         f.write("\n")
     os.chmod(ACCOUNTS_FILE, 0o600)
+
+
+def add_account(
+    type_: str,
+    username: str,
+    api_key: str,
+    base_url: Optional[str] = None,
+    label: Optional[str] = None,
+    id_: Optional[str] = None,
+) -> dict:
+    if type_ not in VALID_TYPES:
+        raise AccountError(f"invalid type '{type_}': must be one of {sorted(VALID_TYPES)}")
+    if not username:
+        raise AccountError("username is required")
+    if not api_key:
+        raise AccountError("api_key is required")
+    if type_ == "github" and base_url:
+        raise AccountError("base_url is only valid for type 'gitlab'")
+
+    if type_ == "gitlab":
+        base_url = base_url or DEFAULT_GITLAB_BASE_URL
+    else:
+        base_url = None
+
+    account_id = id_ or generate_id(type_, username, base_url)
+
+    accounts = load_accounts()
+    if any(a["id"] == account_id for a in accounts):
+        raise AccountError(f"account id '{account_id}' already exists")
+
+    account = Account(
+        id=account_id,
+        type=type_,
+        username=username,
+        api_key=api_key,
+        base_url=base_url,
+        label=label,
+    )
+    accounts.append(account.to_dict())
+    save_accounts(accounts)
+    return account.to_dict()
