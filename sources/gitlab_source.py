@@ -48,11 +48,18 @@ def _normalize_event(event: dict, created_at: datetime) -> list[dict]:
     {"kind", "created_at"}, kind in {commit, pr_opened, pr_merged,
     issue_opened, issue_closed}. A single push event can carry several
     commits (push_data.commit_count), so it expands into one "commit"
-    entry per commit."""
+    entry per commit.
+
+    Push events are identified by action_name + the presence of
+    push_data — NOT by target_type. Verified against two real accounts
+    (gitlab.com and a self-hosted instance): push events always have
+    target_type == "Project", never None/null as an earlier version of
+    this code assumed (untested against a live account at the time).
+    """
     action = event.get("action_name")
     target_type = event.get("target_type")
 
-    if target_type is None and action in ("pushed to", "pushed new"):
+    if action in ("pushed to", "pushed new") and "push_data" in event:
         count = (event.get("push_data") or {}).get("commit_count", 1)
         return [{"kind": "commit", "created_at": created_at} for _ in range(count)]
 
