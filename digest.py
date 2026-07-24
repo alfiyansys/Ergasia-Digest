@@ -67,3 +67,22 @@ def fetch_all_events(
             results.append({"account": account, "since": since, "fetched_at": fetched_at, "error": str(e)})
 
     return results
+
+
+_KIND_TO_METRIC = {
+    "commit": "commits_created",
+    "pr_opened": "prs_or_mrs_opened",
+    "pr_merged": "prs_or_mrs_merged",
+    "issue_opened": "issues_opened",
+    "issue_closed": "issues_closed",
+}
+
+
+def compute_metrics(events: list[dict]) -> dict:
+    """Counts normalized events (from sources/*.py) into the §3 metric set."""
+    metrics = {key: 0 for key in _KIND_TO_METRIC.values()}
+    for event in events:
+        key = _KIND_TO_METRIC.get(event["kind"])
+        if key:
+            metrics[key] += 1
+    return metrics
