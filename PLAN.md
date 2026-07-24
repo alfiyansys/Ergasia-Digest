@@ -261,9 +261,9 @@ Added after the original 6-phase plan was completed, per a follow-up request to 
   - [x] a. `accounts_store.py`: `ACCOUNTS_FILE = os.environ.get("ACCOUNTS_FILE", <default next-to-source path>)` — same default as before if unset, so bare-metal/CLI usage is unaffected
   - [x] b. `state.py`: same pattern for `STATE_FILE`
   - [x] c. Rationale: bind-mounting *individual files* that don't yet exist is a known Docker footgun (Docker can silently create a directory instead of a file); mounting a whole `/data` directory and pointing both files at it via env var avoids that entirely, without changing bare-metal behavior at all
-- [ ] **7.2. `Dockerfile` + `.dockerignore`**:
-  - [ ] a. `Dockerfile`: `python:3.12-slim` base, install `requirements.txt`, copy source, `EXPOSE 8000`, `CMD uvicorn app:app --host 0.0.0.0 --port 8000` (must be `0.0.0.0` inside the container — see §7 note on why this doesn't weaken the "not exposed externally" posture)
-  - [ ] b. `.dockerignore`: exclude `.venv/`, `__pycache__/`, `.git/`, `accounts.json`, `state.json`, `.env` — none of those belong baked into an image
+- [x] **7.2. `Dockerfile` + `.dockerignore`**:
+  - [x] a. `Dockerfile`: `python:3.12-slim` base, install `requirements.txt`, copy source, `EXPOSE 8000`, `CMD uvicorn app:app --host 0.0.0.0 --port 8000` (must be `0.0.0.0` inside the container — see §7 note on why this doesn't weaken the "not exposed externally" posture)
+  - [x] b. `.dockerignore`: exclude `.venv/`, `__pycache__/`, `.git/`, `accounts.json`, `state.json`, `.env` — none of those belong baked into an image
 - [ ] **7.3. `docker-compose.yml`**:
   - [ ] a. `ports: ["127.0.0.1:8000:8000"]` — published to host loopback only, not `0.0.0.0`, so the container isn't reachable from outside the host despite binding `0.0.0.0` internally
   - [ ] b. `env_file: .env`, plus `ACCOUNTS_FILE=/data/accounts.json` / `STATE_FILE=/data/state.json`

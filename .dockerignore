@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.git/
+.gitignore
+
+# Secrets and runtime state — never bake these into an image
+accounts.json
+state.json
+.env
+
+.claude/
