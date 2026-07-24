@@ -211,10 +211,10 @@ Work is organized into phases. Each phase gets its own `feature/phase-<n>-<slug>
   - [x] d. `list_accounts()` with `api_key` masked (last 4 chars) — `base_url`/`label` shown as-is, this output stays local (§2)
   - [x] e. `delete_account(id)`
 
-- [ ] **3. `state.py`** — write per-account tracking and the digest cache together in the same step, since both are needed before steps 5–7 build anything that reads "latest":
+- [x] **3. `state.py`** — write per-account tracking and the digest cache together in the same step, since both are needed before steps 5–7 build anything that reads "latest":
   - [x] a. Change the tracking key from per-source to per-`account_id`: `get_last_run(account_id)` / `set_last_run(account_id, ts)`
   - [x] b. `delete_account_state(account_id)` — called from `accounts_store.delete_account` / `cli.py accounts delete`
-  - [ ] c. `save_latest_digest(text, data)` / `get_latest_digest()` — the backing store for `/digest/latest` and `cli.py digest latest`
+  - [x] c. `save_latest_digest(text, data)` / `get_latest_digest()` — the backing store for `/digest/latest` and `cli.py digest latest`
 
 ### Phase 3 — Source Clients (`feature/phase-3-source-clients`)
 

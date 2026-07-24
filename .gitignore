@@ -2,6 +2,9 @@
 accounts.json
 .env
 
+# Runtime state — generated at runtime, not source
+state.json
+
 # Python
 __pycache__/
 *.pyc
