@@ -233,18 +233,18 @@ Work is organized into phases. Each phase gets its own `feature/phase-<n>-<slug>
 
 ### Phase 5 — Interfaces (`feature/phase-5-interfaces`)
 
-- [ ] **5.1. `cli.py`**:
-  - [ ] a. `accounts add` (`--label` flag for the digest-safe display name; `getpass` prompt for `api_key`; calls `sources.*.verify_access(...)` first and only calls `accounts_store.add_account` if it passes — print the failure reason and exit non-zero without writing anything if it doesn't)
-  - [ ] b. `accounts list` / `accounts delete` (join `last_run` from `state.py` for `list`; call `state.py` cleanup on `delete`)
-  - [ ] c. `digest preview` (`--account`/`--hours`/`--days`, mutually-exclusive validation)
-  - [ ] d. `digest run` / `digest latest`
+- [x] **5.1. `cli.py`**:
+  - [x] a. `accounts add` (`--label` flag for the digest-safe display name; `getpass` prompt for `api_key`; calls `sources.*.verify_access(...)` first and only calls `accounts_store.add_account` if it passes — print the failure reason and exit non-zero without writing anything if it doesn't)
+  - [x] b. `accounts list` / `accounts delete` (join `last_run` from `state.py` for `list`; call `state.py` cleanup on `delete`)
+  - [x] c. `digest preview` (`--account`/`--hours`/`--days`, mutually-exclusive validation)
+  - [x] d. `digest run` / `digest latest`
 
-- [ ] **5.2. `app.py`**:
-  - [ ] a. FastAPI skeleton + `X-API-Key` auth dependency (`secrets.compare_digest`)
-  - [ ] b. `GET /health`
-  - [ ] c. `GET /digest/preview` (query params + mutual-exclusivity validation → `400`)
-  - [ ] d. `POST /digest/run` (no `notify.py` call)
-  - [ ] e. `GET /digest/latest`
+- [x] **5.2. `app.py`**:
+  - [x] a. FastAPI skeleton + `X-API-Key` auth dependency (`secrets.compare_digest`)
+  - [x] b. `GET /health`
+  - [x] c. `GET /digest/preview` (query params + mutual-exclusivity validation → `400`)
+  - [x] d. `POST /digest/run` (no `notify.py` call)
+  - [x] e. `GET /digest/latest`
 
 ### Phase 6 — Documentation (`feature/phase-6-docs`)
 
