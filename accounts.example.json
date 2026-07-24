@@ -1,0 +1,16 @@
+[
+  {
+    "id": "github-github.com-alice",
+    "type": "github",
+    "username": "alice",
+    "api_key": "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+    "id": "gitlab-acme.example.com-bob",
+    "type": "gitlab",
+    "username": "bob",
+    "base_url": "https://gitlab.acme.example.com",
+    "label": "GitLab (work)",
+    "api_key": "glpat-xxxxxxxxxxxxxxxx"
+  }
+]
