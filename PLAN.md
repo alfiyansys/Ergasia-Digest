@@ -194,38 +194,38 @@ Work is organized into phases. Each phase gets its own `feature/phase-<n>-<slug>
 
 ### Phase 1 — Foundation & Safety Net (`feature/phase-1-foundation`)
 
-- [x] **1. Project scaffolding & safety net** — do this *before* anything can create a real `accounts.json` or needs `fastapi`/`uvicorn` installed:
+- [x] **1.1. Project scaffolding & safety net** — do this *before* anything can create a real `accounts.json` or needs `fastapi`/`uvicorn` installed:
   - [x] a. `.gitignore` (exclude `accounts.json`, `.env`, `__pycache__/`, `.venv/`, etc.)
   - [x] b. `.env.example` (`API_KEY=`, `PORT=8000`)
   - [x] c. `accounts.example.json` documenting the §2 schema (one github + one gitlab example entry, fake tokens)
   - [x] d. `requirements.txt` (+`fastapi`, +`uvicorn`)
 
-  > This exists specifically so `.gitignore` is committed before step 2 can ever write a real `accounts.json` into the working tree, and so `fastapi`/`uvicorn` are already available by the time `app.py` (step 7) needs them.
+  > This exists specifically so `.gitignore` is committed before step 2.1 can ever write a real `accounts.json` into the working tree, and so `fastapi`/`uvicorn` are already available by the time `app.py` (step 5.2) needs them.
 
 ### Phase 2 — Storage Layer (`feature/phase-2-storage-layer`)
 
-- [x] **2. `accounts_store.py`** — account CRUD:
+- [x] **2.1. `accounts_store.py`** — account CRUD:
   - [x] a. Schema (dataclass/typed dict, including optional `label`) + `load_accounts()`/`save_accounts()` (create an empty store if missing)
   - [x] b. `generate_id(type, username, base_url)` → `{type}-{host}-{username}` (internal `id` only — never rendered in digest output, see §3)
   - [x] c. `add_account(...)` with field-level validation only (type in {github, gitlab}; `base_url` only for gitlab; `label` accepted for either type; reject duplicate id) — no network calls here; live verification against the actual platform is `cli.py`'s job (Phase 5), calling `sources.*.verify_access(...)` before it ever calls this
   - [x] d. `list_accounts()` with `api_key` masked (last 4 chars) — `base_url`/`label` shown as-is, this output stays local (§2)
   - [x] e. `delete_account(id)`
 
-- [x] **3. `state.py`** — write per-account tracking and the digest cache together in the same step, since both are needed before steps 5–7 build anything that reads "latest":
+- [x] **2.2. `state.py`** — write per-account tracking and the digest cache together in the same step, since both are needed before steps 4.1–5.2 build anything that reads "latest":
   - [x] a. Change the tracking key from per-source to per-`account_id`: `get_last_run(account_id)` / `set_last_run(account_id, ts)`
   - [x] b. `delete_account_state(account_id)` — called from `accounts_store.delete_account` / `cli.py accounts delete`
   - [x] c. `save_latest_digest(text, data)` / `get_latest_digest()` — the backing store for `/digest/latest` and `cli.py digest latest`
 
 ### Phase 3 — Source Clients (`feature/phase-3-source-clients`)
 
-- [ ] **4. Write `sources/github_source.py` and `sources/gitlab_source.py`**:
+- [ ] **3.1. Write `sources/github_source.py` and `sources/gitlab_source.py`**:
   - [ ] a. Accept `(username, token, since)` / `(base_url, username, token, since)` as parameters — no direct env var reads
   - [ ] b. Normalize both clients' output into one shared event shape, so `digest.py` doesn't need platform-specific branching to compute metrics
   - [ ] c. Add `verify_access(username, token)` / `verify_access(base_url, username, token)` — a live, minimal call to confirm auth succeeds and the token can read that account's events (used by `cli.py accounts add`, see Phase 5); returns ok/reason, doesn't require any events to actually exist
 
 ### Phase 4 — Digest Core (`feature/phase-4-digest-core`)
 
-- [ ] **5. Write `digest.py`**:
+- [ ] **4.1. Write `digest.py`**:
   - [ ] a. `fetch_all_events(since_override=None)` — resolve per-account `since` (override > `last_run` > `DEFAULT_LOOKBACK_HOURS = 24`), call the matching source client, catch per-account fetch failures without stopping the loop
   - [ ] b. Compute per-account metrics (commits created; PR/MR opened & merged; issues opened & closed) from the normalized events
   - [ ] c. `platform_label(account)` → `GitHub` / `GitLab` / account's `label` if set / generic `GitLab (self-hosted)` fallback — **never** the real `base_url` hostname (see §3)
@@ -233,13 +233,13 @@ Work is organized into phases. Each phase gets its own `feature/phase-<n>-<slug>
 
 ### Phase 5 — Interfaces (`feature/phase-5-interfaces`)
 
-- [ ] **6. `cli.py`**:
+- [ ] **5.1. `cli.py`**:
   - [ ] a. `accounts add` (`--label` flag for the digest-safe display name; `getpass` prompt for `api_key`; calls `sources.*.verify_access(...)` first and only calls `accounts_store.add_account` if it passes — print the failure reason and exit non-zero without writing anything if it doesn't)
   - [ ] b. `accounts list` / `accounts delete` (join `last_run` from `state.py` for `list`; call `state.py` cleanup on `delete`)
   - [ ] c. `digest preview` (`--account`/`--hours`/`--days`, mutually-exclusive validation)
   - [ ] d. `digest run` / `digest latest`
 
-- [ ] **7. `app.py`**:
+- [ ] **5.2. `app.py`**:
   - [ ] a. FastAPI skeleton + `X-API-Key` auth dependency (`secrets.compare_digest`)
   - [ ] b. `GET /health`
   - [ ] c. `GET /digest/preview` (query params + mutual-exclusivity validation → `400`)
@@ -248,6 +248,6 @@ Work is organized into phases. Each phase gets its own `feature/phase-<n>-<slug>
 
 ### Phase 6 — Documentation (`feature/phase-6-docs`)
 
-- [ ] **8. `README.md`** — install, `.env` setup, `cli.py` usage (accounts + digest examples), running locally, systemd unit + cron/harness note.
+- [ ] **6.1. `README.md`** — install, `.env` setup, `cli.py` usage (accounts + digest examples), running locally, systemd unit + cron/harness note.
 
 Once this plan is approved, proceed phase by phase in order, checking off each box as it's completed and merging each phase branch into `dev` before starting the next.
