@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import argparse
 import sys
+from datetime import datetime, timedelta, timezone
 from getpass import getpass
 
 import accounts_store
+import digest
 import state
 from sources import github_source, gitlab_source
 
@@ -96,6 +98,38 @@ def cmd_accounts_delete(args: argparse.Namespace) -> int:
     return 0
 
 
+def _resolve_accounts(account_id: str | None) -> list[dict] | None:
+    """Returns None (error already printed) if account_id was given but not found."""
+    if account_id is None:
+        return accounts_store.load_accounts()
+    accounts = [a for a in accounts_store.load_accounts() if a["id"] == account_id]
+    if not accounts:
+        print(f"Error: account '{account_id}' not found", file=sys.stderr)
+        return None
+    return accounts
+
+
+def cmd_digest_preview(args: argparse.Namespace) -> int:
+    if args.hours is not None and args.days is not None:
+        print("Error: --hours and --days are mutually exclusive", file=sys.stderr)
+        return 1
+
+    since_override = None
+    if args.hours is not None:
+        since_override = datetime.now(timezone.utc) - timedelta(hours=args.hours)
+    elif args.days is not None:
+        since_override = datetime.now(timezone.utc) - timedelta(days=args.days)
+
+    accounts = _resolve_accounts(args.account)
+    if accounts is None:
+        return 1
+
+    results = digest.fetch_all_events(since_override=since_override, accounts=accounts)
+    rendered = digest.build_digest(results)
+    print(rendered["text"])
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="cli.py", description="Ergasia Digest CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -117,6 +151,15 @@ def build_parser() -> argparse.ArgumentParser:
     delete_parser = accounts_sub.add_parser("delete", help="Delete a tracked account")
     delete_parser.add_argument("id")
     delete_parser.set_defaults(func=cmd_accounts_delete)
+
+    digest_parser = subparsers.add_parser("digest", help="Digest operations")
+    digest_sub = digest_parser.add_subparsers(dest="digest_command", required=True)
+
+    preview_parser = digest_sub.add_parser("preview", help="Preview the digest without updating state")
+    preview_parser.add_argument("--account", default=None)
+    preview_parser.add_argument("--hours", type=int, default=None)
+    preview_parser.add_argument("--days", type=int, default=None)
+    preview_parser.set_defaults(func=cmd_digest_preview)
 
     return parser
 
