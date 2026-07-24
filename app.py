@@ -19,7 +19,10 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query
 import accounts_store
 import digest
 
-app = FastAPI(title="Ergasia Digest")
+APP_NAME = "Ergasia Digest"
+REPO_URL = "https://github.com/alfiyansys/Ergasia-Digest"
+
+app = FastAPI(title=APP_NAME)
 
 
 def require_api_key(x_api_key: Optional[str] = Header(None)) -> None:
@@ -30,7 +33,7 @@ def require_api_key(x_api_key: Optional[str] = Header(None)) -> None:
 
 @app.get("/health", dependencies=[Depends(require_api_key)])
 def health() -> dict:
-    return {"status": "ok"}
+    return {"app": APP_NAME, "repo_url": REPO_URL, "status": "ok"}
 
 
 @app.post("/digest/run", dependencies=[Depends(require_api_key)])
@@ -59,4 +62,5 @@ def digest_run(
             raise HTTPException(status_code=404, detail=f"account '{account}' not found")
 
     results = digest.fetch_all_events(since_override=since_override, accounts=accounts)
-    return digest.build_digest(results)
+    rendered = digest.build_digest(results)
+    return {"app": APP_NAME, "repo_url": REPO_URL, **rendered}
