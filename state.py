@@ -1,4 +1,4 @@
-"""Tracks per-account last-run timestamps and caches the latest generated digest."""
+"""Tracks per-account last-run timestamps."""
 
 from __future__ import annotations
 
@@ -15,14 +15,13 @@ STATE_FILE = os.environ.get(
 
 def _load_state() -> dict:
     if not os.path.exists(STATE_FILE):
-        return {"last_run": {}, "latest_digest": None}
+        return {"last_run": {}}
     with open(STATE_FILE, "r") as f:
         content = f.read().strip()
     if not content:
-        return {"last_run": {}, "latest_digest": None}
+        return {"last_run": {}}
     state = json.loads(content)
     state.setdefault("last_run", {})
-    state.setdefault("latest_digest", None)
     return state
 
 
@@ -49,19 +48,3 @@ def delete_account_state(account_id: str) -> None:
     state = _load_state()
     state["last_run"].pop(account_id, None)
     _save_state(state)
-
-
-def save_latest_digest(text: str, data: dict) -> None:
-    """Backing store for GET /digest/latest and cli.py digest latest."""
-    state = _load_state()
-    state["latest_digest"] = {
-        "text": text,
-        "data": data,
-        "generated_at": datetime.now().astimezone().isoformat(),
-    }
-    _save_state(state)
-
-
-def get_latest_digest() -> Optional[dict]:
-    """Returns {"text", "data", "generated_at"}, or None if no digest has run yet."""
-    return _load_state()["latest_digest"]
