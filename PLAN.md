@@ -194,11 +194,11 @@ Work is organized into phases. Each phase gets its own `feature/phase-<n>-<slug>
 
 ### Phase 1 — Foundation & Safety Net (`feature/phase-1-foundation`)
 
-- [ ] **1. Project scaffolding & safety net** — do this *before* anything can create a real `accounts.json` or needs `fastapi`/`uvicorn` installed:
-  - [ ] a. `.gitignore` (exclude `accounts.json`, `.env`, `__pycache__/`, `.venv/`, etc.)
-  - [ ] b. `.env.example` (`API_KEY=`, `PORT=8000`)
-  - [ ] c. `accounts.example.json` documenting the §2 schema (one github + one gitlab example entry, fake tokens)
-  - [ ] d. `requirements.txt` (+`fastapi`, +`uvicorn`)
+- [x] **1. Project scaffolding & safety net** — do this *before* anything can create a real `accounts.json` or needs `fastapi`/`uvicorn` installed:
+  - [x] a. `.gitignore` (exclude `accounts.json`, `.env`, `__pycache__/`, `.venv/`, etc.)
+  - [x] b. `.env.example` (`API_KEY=`, `PORT=8000`)
+  - [x] c. `accounts.example.json` documenting the §2 schema (one github + one gitlab example entry, fake tokens)
+  - [x] d. `requirements.txt` (+`fastapi`, +`uvicorn`)
 
   > This exists specifically so `.gitignore` is committed before step 2 can ever write a real `accounts.json` into the working tree, and so `fastapi`/`uvicorn` are already available by the time `app.py` (step 7) needs them.
 
