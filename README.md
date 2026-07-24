@@ -35,6 +35,10 @@ HOST=127.0.0.1
 `API_KEY` protects every HTTP endpoint via the `X-API-Key` header. It's
 unrelated to the per-account tokens used below — those are entered
 separately when you register an account and are never stored in `.env`.
+If `API_KEY` is left blank/unset, auth is disabled entirely and every
+endpoint is open with no header required — fine for local dev on
+`127.0.0.1`, but set a real value for anything reachable beyond your own
+machine.
 
 ## Managing accounts (CLI-only)
 
