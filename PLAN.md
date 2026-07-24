@@ -132,7 +132,7 @@ Rules:
   - (optional, future step if there's time: code review comments given, new repos created)
 - Metrics with a value of 0 **other than** commits may be dropped from the `Activities` sentence, so it doesn't get noisy/long on quiet days (e.g. no MRs merged → don't write "0 merge requests merged").
 - If an account fails to fetch during this window (see the failure rules in §2), its block **still appears** (not silently skipped) with `Activities: fetch failed (<short reason, e.g. rate limit>)` — so it's visible that an account needs attention (expired token, etc.) instead of just vanishing from the digest without a trace.
-- This is the human-readable rendering generated from the underlying per-account data structure: `{ "account_id", "platform", "username", "metrics": { "commits_created", "prs_or_mrs_opened", "prs_or_mrs_merged", "issues_opened", "issues_closed" }, "error"? }`. HTTP (`/digest/preview`, `/digest/run`'s response) returns this text (ready to send to chat by the harness) combined with the raw data structure in a single JSON payload; the CLI (`cli.py digest ...`) prints the text version directly to stdout.
+- This is the human-readable rendering generated from the underlying per-account data structure: `{ "account_id", "platform", "username", "metrics": { "commits_created", "prs_or_mrs_opened", "prs_or_mrs_merged", "issues_opened", "issues_closed" }, "error"? }`. HTTP (`/digest/run`'s response) returns this text (ready to send to chat by the harness) combined with the raw data structure in a single JSON payload — also prefixed with top-level `"app": "Ergasia Digest"` / `"repo_url"` identification fields (HTTP only, not part of `digest.py`'s own return value — see §4). The CLI (`cli.py digest run`) prints just the text version directly to stdout, no app/repo fields.
 - **Caution for the harness:** `account_id` in that JSON payload can still be derived from the real self-hosted hostname (§2, e.g. `gitlab-gitlab.acme.example.com-bob`), since it's only ever used internally (state tracking, `?account=` filtering) and was never in scope for the masking above. The raw JSON is HTTP/CLI output gated by `API_KEY`/host access (§4) — the harness should only forward the rendered `platform`/text fields to chat, never paste the raw payload (including `account_id`) into an external channel.
 
 ## 4. HTTP Endpoints (Planned) & CLI Access
@@ -141,12 +141,14 @@ HTTP endpoints are **read-only for digest data** — there is no endpoint for ma
 
 | Method | Path               | Purpose |
 |--------|--------------------|---------|
-| GET    | `/health`          | Check that the service is alive. |
+| GET    | `/health`          | Check that the service is alive. Response also includes `"app": "Ergasia Digest"` / `"repo_url"` identification fields (see note below). |
 | POST   | `/digest/run`      | Fetch + build digest (format in §3) from every account in `accounts.json` (or a filtered subset), **returned as JSON/text**. Always a fresh live fetch — nothing is persisted anywhere, so calling this repeatedly is completely safe. **Doesn't push to a notify target** — sending to Slack/OpenClaw is the agentic harness's responsibility, reading this endpoint's response directly and sending its own notification. This is the endpoint called by cron/the harness, and also the one used for ad-hoc manual checks — there's no separate "preview" endpoint (see below for why). |
 
 There is deliberately no `/digest/latest` / cached-result endpoint, and no persistent state of any kind (`state.py` existed briefly and was removed — see §1's note and `AGENTS.md`). Every call is a fresh fetch; there's no case in this project where something needs a *previous* result without re-running, or an incremental window based on when it was last called.
 
 `/digest/run` used to be two separate things — `/digest/preview` (read-only, ad-hoc, supported `?hours=`/`?days=`) and `/digest/run` (updated `last_run`, no window override, called by the harness). Once neither one touches state, that distinction had nothing left to it, so they were merged into the one endpoint above, which always supports `?account=`/`?hours=`/`?days=`.
+
+**App identification (HTTP only):** every HTTP response (`/health` and `/digest/run`) is prefixed with `"app": "Ergasia Digest"` and `"repo_url": "https://github.com/alfiyansys/Ergasia-Digest"` — constants defined once in `app.py` (`APP_NAME`/`REPO_URL`). This is purely an HTTP-response-shape thing, not part of `digest.py`'s own return value, so `cli.py digest run`'s stdout output is unaffected (still just the plain §3 text).
 
 **Equivalent CLI command** (called directly, no `curl` needed — doesn't require `app.py`/the service to be running at all, since there's no shared state to keep in sync):
 
