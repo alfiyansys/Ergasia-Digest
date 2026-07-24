@@ -97,3 +97,20 @@ def add_account(
     accounts.append(account.to_dict())
     save_accounts(accounts)
     return account.to_dict()
+
+
+def _mask_api_key(api_key: str) -> str:
+    if len(api_key) <= 4:
+        return "*" * len(api_key)
+    return "*" * (len(api_key) - 4) + api_key[-4:]
+
+
+def list_accounts() -> list[dict]:
+    """Every stored account with api_key masked. base_url/label are shown as-is —
+    this output stays local (cli.py only), see PLAN.md §2."""
+    result = []
+    for account in load_accounts():
+        entry = dict(account)
+        entry["api_key"] = _mask_api_key(entry["api_key"])
+        result.append(entry)
+    return result
