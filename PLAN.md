@@ -248,6 +248,6 @@ Work is organized into phases. Each phase gets its own `feature/phase-<n>-<slug>
 
 ### Phase 6 — Documentation (`feature/phase-6-docs`)
 
-- [ ] **6.1. `README.md`** — install, `.env` setup, `cli.py` usage (accounts + digest examples), running locally, systemd unit + cron/harness note.
+- [x] **6.1. `README.md`** — install, `.env` setup, `cli.py` usage (accounts + digest examples), running locally, systemd unit + cron/harness note.
 
 Once this plan is approved, proceed phase by phase in order, checking off each box as it's completed and merging each phase branch into `dev` before starting the next.
