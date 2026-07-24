@@ -59,10 +59,10 @@ def digest_preview(
 
 @app.post("/digest/run", dependencies=[Depends(require_api_key)])
 def digest_run() -> dict:
-    """Fetch + build + update state + cache. No notify.py call — sending
-    to chat is deferred to the agentic harness reading this response (or
-    /digest/latest), see PLAN.md §4/§6. No ?hours/?days here either —
-    always incremental via last_run, so state never gets a gap or overlap."""
+    """Fetch + build + update state. No notify.py call — sending to chat
+    is deferred to the agentic harness reading this response directly,
+    see PLAN.md §4/§6. No ?hours/?days here either — always incremental
+    via last_run, so state never gets a gap or overlap."""
     results = digest.fetch_all_events()
     rendered = digest.build_digest(results)
 
@@ -70,13 +70,4 @@ def digest_run() -> dict:
         if "error" not in result:
             state.set_last_run(result["account"]["id"], result["fetched_at"])
 
-    state.save_latest_digest(rendered["text"], rendered["data"])
     return rendered
-
-
-@app.get("/digest/latest", dependencies=[Depends(require_api_key)])
-def digest_latest() -> dict:
-    latest = state.get_latest_digest()
-    if latest is None:
-        raise HTTPException(status_code=404, detail="no digest has been generated yet")
-    return latest

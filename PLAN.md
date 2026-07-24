@@ -132,7 +132,7 @@ Rules:
   - (optional, future step if there's time: code review comments given, new repos created)
 - Metrics with a value of 0 **other than** commits may be dropped from the `Activities` sentence, so it doesn't get noisy/long on quiet days (e.g. no MRs merged → don't write "0 merge requests merged").
 - If an account fails to fetch during this window (see the failure rules in §2), its block **still appears** (not silently skipped) with `Activities: fetch failed (<short reason, e.g. rate limit>)` — so it's visible that an account needs attention (expired token, etc.) instead of just vanishing from the digest without a trace.
-- This is the human-readable rendering generated from the underlying per-account data structure: `{ "account_id", "platform", "username", "metrics": { "commits_created", "prs_or_mrs_opened", "prs_or_mrs_merged", "issues_opened", "issues_closed" }, "error"? }`. HTTP (`/digest/preview`, `/digest/run`'s response, `/digest/latest`) returns this text (ready to send to chat by the harness) combined with the raw data structure in a single JSON payload; the CLI (`cli.py digest ...`) prints the text version directly to stdout.
+- This is the human-readable rendering generated from the underlying per-account data structure: `{ "account_id", "platform", "username", "metrics": { "commits_created", "prs_or_mrs_opened", "prs_or_mrs_merged", "issues_opened", "issues_closed" }, "error"? }`. HTTP (`/digest/preview`, `/digest/run`'s response) returns this text (ready to send to chat by the harness) combined with the raw data structure in a single JSON payload; the CLI (`cli.py digest ...`) prints the text version directly to stdout.
 - **Caution for the harness:** `account_id` in that JSON payload can still be derived from the real self-hosted hostname (§2, e.g. `gitlab-gitlab.acme.example.com-bob`), since it's only ever used internally (state tracking, `?account=` filtering) and was never in scope for the masking above. The raw JSON is HTTP/CLI output gated by `API_KEY`/host access (§4) — the harness should only forward the rendered `platform`/text fields to chat, never paste the raw payload (including `account_id`) into an external channel.
 
 ## 4. HTTP Endpoints (Planned) & CLI Access
@@ -143,19 +143,19 @@ HTTP endpoints are **read-only for digest data** — there is no endpoint for ma
 |--------|--------------------|---------|
 | GET    | `/health`          | Check that the service is alive. |
 | GET    | `/digest/preview`  | Fetch + build digest (format in §3) from every account in `accounts.json`, **returned as JSON/text** — no state update, no push to the notify target. For manual checks. Takes an optional `?account=<id>` query param to check a single account, and `?hours=<N>` / `?days=<N>` to override the window (see note below the table). |
-| POST   | `/digest/run`      | Fetch + build (format in §3) + update per-account state (`last_run`) + cache the result for `/digest/latest`. **No longer pushes to a notify target** — sending to Slack/OpenClaw is deferred, now the agentic harness's responsibility, reading this endpoint's response (or `/digest/latest`) and sending its own notification. This is the endpoint called by cron/the harness. |
-| GET    | `/digest/latest`   | Return the last successfully generated digest (cached in memory/file) — the primary source the agentic harness reads to send notifications. |
+| POST   | `/digest/run`      | Fetch + build (format in §3) + update per-account state (`last_run`). **No longer pushes to a notify target** — sending to Slack/OpenClaw is deferred, now the agentic harness's responsibility, reading this endpoint's response directly and sending its own notification. This is the endpoint called by cron/the harness. |
 
-**Equivalent CLI commands** (called directly, no `curl` needed, but only requires `app.py`/the service to be running if you want state & cache to stay in sync with HTTP — see note below):
+There is deliberately no `/digest/latest` / cached-result endpoint. Both the CLI and HTTP callers only ever need the result of the one `run`/`preview` call they just made — there's no case in this project where something needs to fetch a *previous* result without re-running, so a caching layer would just be complexity with no consumer. `state.json` only ever tracks `last_run`.
+
+**Equivalent CLI commands** (called directly, no `curl` needed, but only requires `app.py`/the service to be running if you want state to stay in sync with HTTP — see note below):
 
 ```
 $ python cli.py digest preview --hours 6
 $ python cli.py digest preview --account gitlab-gitlab.acme.example.com-bob --days 3
-$ python cli.py digest run       # equivalent to POST /digest/run: updates state + cache
-$ python cli.py digest latest    # equivalent to GET /digest/latest
+$ python cli.py digest run       # equivalent to POST /digest/run: fetches + updates state
 ```
 
-`cli.py digest ...` calls `digest.py`/`state.py` directly (not over HTTP), so it **doesn't require the `uvicorn` service to be running** for `preview`/`run` (it reads/writes the same files on disk directly). Because of this, don't run `cli.py digest run` at the same time as `POST /digest/run` from the harness/cron — both write to the same `state.py`/cache with no file-locking (out of scope for a tool this small); use one or the other at a time.
+`cli.py digest ...` calls `digest.py`/`state.py` directly (not over HTTP), so it **doesn't require the `uvicorn` service to be running** for `preview`/`run` (it reads/writes the same files on disk directly). Because of this, don't run `cli.py digest run` at the same time as `POST /digest/run` from the harness/cron — both write to the same `state.json` with no file-locking (out of scope for a tool this small); use one or the other at a time.
 
 **Auth:** the HTTP endpoints above are protected by a simple shared secret (`X-API-Key` header), checked against the `API_KEY` env var. This is different from the per-account `api_key` in §2 — `API_KEY` here is a secret belonging to the Ergasia Digest service itself, gating who's allowed to call its HTTP endpoints at all. Good enough for an internal tool — no need for OAuth. The CLI (`cli.py`) doesn't go through this gate, since its access is already restricted to shell/SSH access on the host (see §2 and §7).
 
@@ -216,10 +216,10 @@ Work is organized into phases. Each phase gets its own `feature/phase-<n>-<slug>
   - [x] d. `list_accounts()` with `api_key` masked (last 4 chars) — `base_url`/`label` shown as-is, this output stays local (§2)
   - [x] e. `delete_account(id)`
 
-- [x] **2.2. `state.py`** — write per-account tracking and the digest cache together in the same step, since both are needed before steps 4.1–5.2 build anything that reads "latest":
+- [x] **2.2. `state.py`** — per-account `last_run` tracking:
   - [x] a. Change the tracking key from per-source to per-`account_id`: `get_last_run(account_id)` / `set_last_run(account_id, ts)`
   - [x] b. `delete_account_state(account_id)` — called from `accounts_store.delete_account` / `cli.py accounts delete`
-  - [x] c. `save_latest_digest(text, data)` / `get_latest_digest()` — the backing store for `/digest/latest` and `cli.py digest latest`
+  - ~~c. `save_latest_digest(text, data)` / `get_latest_digest()`~~ — **removed** after the fact: there's no consumer that needs a cached previous result rather than just re-running `preview`/`run`, so this was pure unused complexity (see §4's note). `state.json` only ever holds `last_run`.
 
 ### Phase 3 — Source Clients (`feature/phase-3-source-clients`)
 
@@ -242,14 +242,14 @@ Work is organized into phases. Each phase gets its own `feature/phase-<n>-<slug>
   - [x] a. `accounts add` (`--label` flag for the digest-safe display name; `getpass` prompt for `api_key`; calls `sources.*.verify_access(...)` first and only calls `accounts_store.add_account` if it passes — print the failure reason and exit non-zero without writing anything if it doesn't)
   - [x] b. `accounts list` / `accounts delete` (join `last_run` from `state.py` for `list`; call `state.py` cleanup on `delete`)
   - [x] c. `digest preview` (`--account`/`--hours`/`--days`, mutually-exclusive validation)
-  - [x] d. `digest run` / `digest latest`
+  - [x] d. `digest run` (~~/ `digest latest`~~ — removed, see §4/§8 Phase 2 note; no cached-result consumer exists)
 
 - [x] **5.2. `app.py`**:
   - [x] a. FastAPI skeleton + `X-API-Key` auth dependency (`secrets.compare_digest`)
   - [x] b. `GET /health`
   - [x] c. `GET /digest/preview` (query params + mutual-exclusivity validation → `400`)
   - [x] d. `POST /digest/run` (no `notify.py` call)
-  - [x] e. `GET /digest/latest`
+  - ~~e. `GET /digest/latest`~~ — removed for the same reason
 
 ### Phase 6 — Documentation (`feature/phase-6-docs`)
 

@@ -20,7 +20,8 @@ Progress is tracked via the checkboxes in `PLAN.md` §8 — check there for what
 - **`base_url` is only valid for `type: gitlab`.** Reject it (validation error) if this field is set for `type: github` — GitHub Enterprise isn't supported yet.
 - **The digest output format must exactly follow `PLAN.md` §3:** a `Platform:`/`Username:`/`Activities:` block per account, `commits created` always shown (including 0), other metrics dropped when 0, and accounts that failed to fetch still appear as a block (with a short error message) — never silently skipped.
 - **Never render the real self-hosted GitLab hostname (`base_url`) in digest output.** That text leaves the host via the harness (§6), so it's an external-exposure risk, not just an internal detail. Use the account's `label` if set, otherwise a generic `GitLab (self-hosted)` fallback (`PLAN.md` §2/§3). The real hostname is fine in `cli.py accounts list` (local-only) and internally in `account_id` — just don't let `account_id` or `base_url` leak into anything sent to chat.
-- **`cli.py digest run` and `POST /digest/run` read/write the same state/cache files with no locking.** Don't run both at the same time; this is a deliberate choice to avoid over-engineering file-locking into a tool this small internally — don't "fix" it by adding locking unless asked.
+- **`cli.py digest run` and `POST /digest/run` read/write the same `state.json` with no locking.** Don't run both at the same time; this is a deliberate choice to avoid over-engineering file-locking into a tool this small internally — don't "fix" it by adding locking unless asked.
+- **There is no `/digest/latest` endpoint or cached-result command, and don't re-add one.** This was removed after being built — no consumer in this project ever needs a *previous* digest result without re-running `preview`/`run`, so it was pure unused complexity. `state.json` only tracks `last_run`. If a real need for cached results shows up later, that's a deliberate feature decision to make explicitly, not something to quietly rebuild because it "seems useful."
 - **`cli.py accounts add` must verify live access before persisting an account** (`PLAN.md` §2) — call `sources.*.verify_access(...)` (auth + read-scope check against the real platform) and only write to `accounts.json` if it passes; otherwise print the failure reason and write nothing. This check is about API access, not activity — a valid token with zero recent events must still pass. There's no bypass flag by design; don't add one unless asked. Verification logic belongs in `sources/*.py`, not `accounts_store.py` — keep the storage module free of network calls.
 
 ## Code conventions
@@ -52,7 +53,6 @@ python cli.py accounts list
 python cli.py accounts delete <id>
 python cli.py digest preview [--account <id>] [--hours N | --days N]
 python cli.py digest run
-python cli.py digest latest
 ```
 
 No test suite yet. If adding one, prioritize unit tests for `digest.py` (`fetch_all_events`/`build_digest` with mocked GitHub/GitLab events) and `accounts_store.py` (field validation, id auto-generation, masking) — these two modules are the easiest to get silently wrong.
