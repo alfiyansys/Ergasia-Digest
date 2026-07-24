@@ -191,6 +191,8 @@ The service still runs continuously (systemd unit / uvicorn) so it can be called
 
 **Docker (optional, see Phase 7 in §8):** the container binds `0.0.0.0:8000` internally (required for Docker's port mapping to reach it — `127.0.0.1` inside the container isn't reachable from the host), but the port is only published to the host's loopback (`127.0.0.1:8000:8000`), preserving the same "not exposed externally" posture as bare-metal. `accounts.json`/`state.json` move to a mounted `/data` volume (via `ACCOUNTS_FILE`/`STATE_FILE` env vars) rather than living next to the source inside the image, so they persist across container rebuilds. The CLI-only account-management model still holds — `cli.py accounts add` runs via `docker exec` into the running container instead of directly on host shell, which requires Docker daemon access (root/`docker` group), an equivalent-or-stronger gate than plain SSH.
 
+**Pyker (optional, see Phase 8 in §8):** a lightweight, no-root, single-file Python process manager ([mrvi0/pyker](https://github.com/mrvi0/pyker)) — a simpler alternative to systemd/Docker for someone who just wants `start`/`stop`/`restart`/`list`/`logs` on a plain host. Since Pyker runs a `.py` script directly (`pyker start <name> <script.py>`) rather than an arbitrary command line, it needs a small `run.py` wrapper that calls `uvicorn.run("app:app", ...)`. **Caveat found by reading the actual source** (not just its README): Pyker's `--auto-restart` flag is stored in its state file but, as of the version reviewed, nothing in the codebase actually monitors and restarts a crashed process — there's no daemon/watch loop. Don't rely on Pyker alone for crash recovery; if that matters, use systemd or Docker's `restart:` policy instead. CLI-only account management is unaffected — Pyker doesn't containerize anything, so `cli.py` still just runs directly on the same host shell, same as plain bare-metal.
+
 ## 8. Next Steps
 
 Work is organized into phases. Each phase gets its own `feature/phase-<n>-<slug>` branch, cut from an up-to-date `dev` (never from `main`) — not a branch per individual step. All steps inside a phase are done, checked off, and smoke-tested together on that branch before it's merged back into `dev`; only after that does `dev` ever get promoted to `main` (see `AGENTS.md` Git Workflow). Within a phase, commits still stay granular per lettered sub-step — a phase branch holds several commits, not one.
@@ -269,5 +271,14 @@ Added after the original 6-phase plan was completed, per a follow-up request to 
   - [x] b. `env_file: .env`, plus `ACCOUNTS_FILE=/data/accounts.json` / `STATE_FILE=/data/state.json`
   - [x] c. `volumes: ["./data:/data"]` — one directory mount, not per-file, so Docker creates it cleanly if missing
 - [x] **7.4. Update `README.md`** with a Docker section: `docker compose up -d`, and `docker compose exec ergasia-digest python cli.py accounts add ...` as the Docker-mode equivalent of running `cli.py` directly on host shell
+
+### Phase 8 — Pyker Process Manager (`feature/phase-8-pyker`)
+
+Added after Phase 7, per a follow-up request: [mrvi0/pyker](https://github.com/mrvi0/pyker), a lightweight no-root Python process manager — unrelated to Docker/containers, see §7 for the caveat found by reading its source.
+
+- [ ] **8.1. `run.py` entrypoint + dependency**:
+  - [ ] a. `run.py` — loads `.env` via `python-dotenv`, then `uvicorn.run("app:app", host="127.0.0.1", port=...)`. Needed because Pyker's CLI runs a plain `.py` script directly (`pyker start <name> <script.py>`), not an arbitrary command line — there's no other way to hand it an ASGI app.
+  - [ ] b. Add `python-dotenv` to `requirements.txt` — Pyker has no declarative env-file mechanism the way systemd (`EnvironmentFile=`) or docker-compose (`env_file:`) do, so `run.py` loads `.env` itself rather than depending on the invoking shell already having `API_KEY`/`PORT` exported.
+- [ ] **8.2. Update `README.md`** with a Pyker section: install, `pyker start ergasia-digest run.py --venv ./.venv`, `stop`/`restart`/`list`/`logs`, and the `--auto-restart` caveat from §7 stated plainly (not enforced by any monitor as of the reviewed source).
 
 Once this plan is approved, proceed phase by phase in order, checking off each box as it's completed and merging each phase branch into `dev` before starting the next.
