@@ -14,6 +14,9 @@ from typing import Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 
+import accounts_store
+import digest
+
 app = FastAPI(title="Ergasia Digest")
 
 
@@ -26,3 +29,28 @@ def require_api_key(x_api_key: Optional[str] = Header(None)) -> None:
 @app.get("/health", dependencies=[Depends(require_api_key)])
 def health() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/digest/preview", dependencies=[Depends(require_api_key)])
+def digest_preview(
+    account: Optional[str] = Query(None),
+    hours: Optional[int] = Query(None),
+    days: Optional[int] = Query(None),
+) -> dict:
+    if hours is not None and days is not None:
+        raise HTTPException(status_code=400, detail="hours and days are mutually exclusive")
+
+    since_override = None
+    if hours is not None:
+        since_override = datetime.now(timezone.utc) - timedelta(hours=hours)
+    elif days is not None:
+        since_override = datetime.now(timezone.utc) - timedelta(days=days)
+
+    accounts = accounts_store.load_accounts()
+    if account is not None:
+        accounts = [a for a in accounts if a["id"] == account]
+        if not accounts:
+            raise HTTPException(status_code=404, detail=f"account '{account}' not found")
+
+    results = digest.fetch_all_events(since_override=since_override, accounts=accounts)
+    return digest.build_digest(results)
