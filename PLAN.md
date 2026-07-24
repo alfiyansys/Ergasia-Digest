@@ -264,10 +264,10 @@ Added after the original 6-phase plan was completed, per a follow-up request to 
 - [x] **7.2. `Dockerfile` + `.dockerignore`**:
   - [x] a. `Dockerfile`: `python:3.12-slim` base, install `requirements.txt`, copy source, `EXPOSE 8000`, `CMD uvicorn app:app --host 0.0.0.0 --port 8000` (must be `0.0.0.0` inside the container — see §7 note on why this doesn't weaken the "not exposed externally" posture)
   - [x] b. `.dockerignore`: exclude `.venv/`, `__pycache__/`, `.git/`, `accounts.json`, `state.json`, `.env` — none of those belong baked into an image
-- [ ] **7.3. `docker-compose.yml`**:
-  - [ ] a. `ports: ["127.0.0.1:8000:8000"]` — published to host loopback only, not `0.0.0.0`, so the container isn't reachable from outside the host despite binding `0.0.0.0` internally
-  - [ ] b. `env_file: .env`, plus `ACCOUNTS_FILE=/data/accounts.json` / `STATE_FILE=/data/state.json`
-  - [ ] c. `volumes: ["./data:/data"]` — one directory mount, not per-file, so Docker creates it cleanly if missing
+- [x] **7.3. `docker-compose.yml`**:
+  - [x] a. `ports: ["127.0.0.1:8000:8000"]` — published to host loopback only, not `0.0.0.0`, so the container isn't reachable from outside the host despite binding `0.0.0.0` internally
+  - [x] b. `env_file: .env`, plus `ACCOUNTS_FILE=/data/accounts.json` / `STATE_FILE=/data/state.json`
+  - [x] c. `volumes: ["./data:/data"]` — one directory mount, not per-file, so Docker creates it cleanly if missing
 - [ ] **7.4. Update `README.md`** with a Docker section: `docker compose up -d`, and `docker compose exec ergasia-digest python cli.py accounts add ...` as the Docker-mode equivalent of running `cli.py` directly on host shell
 
 Once this plan is approved, proceed phase by phase in order, checking off each box as it's completed and merging each phase branch into `dev` before starting the next.
