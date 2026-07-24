@@ -72,3 +72,11 @@ def digest_run() -> dict:
 
     state.save_latest_digest(rendered["text"], rendered["data"])
     return rendered
+
+
+@app.get("/digest/latest", dependencies=[Depends(require_api_key)])
+def digest_latest() -> dict:
+    latest = state.get_latest_digest()
+    if latest is None:
+        raise HTTPException(status_code=404, detail="no digest has been generated yet")
+    return latest
