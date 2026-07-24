@@ -113,8 +113,7 @@ directly):
 $ python cli.py digest preview                       # since each account's last run, or last 24h if new
 $ python cli.py digest preview --hours 6              # ad-hoc window override, no state touched
 $ python cli.py digest preview --account <id> --days 3
-$ python cli.py digest run                            # updates state + cache, same as POST /digest/run
-$ python cli.py digest latest                         # last cached digest
+$ python cli.py digest run                            # fetches + updates state, same as POST /digest/run
 ```
 
 **HTTP** (requires the service running, see below):
@@ -122,11 +121,12 @@ $ python cli.py digest latest                         # last cached digest
 ```
 curl -H "X-API-Key: $API_KEY" http://127.0.0.1:8000/digest/preview
 curl -H "X-API-Key: $API_KEY" -X POST http://127.0.0.1:8000/digest/run
-curl -H "X-API-Key: $API_KEY" http://127.0.0.1:8000/digest/latest
 ```
 
-Don't run `cli.py digest run` and `POST /digest/run` at the same time —
-both write to the same state/cache files with no locking.
+There's no cached "last result" endpoint/command — both interfaces only
+ever return the result of the call you just made. Don't run `cli.py
+digest run` and `POST /digest/run` at the same time — both write to the
+same `state.json` with no locking.
 
 ## Running locally
 
