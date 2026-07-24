@@ -243,7 +243,7 @@ Work is organized into phases. Each phase gets its own `feature/phase-<n>-<slug>
   - [x] a. FastAPI skeleton + `X-API-Key` auth dependency (`secrets.compare_digest`)
   - [x] b. `GET /health`
   - [x] c. `GET /digest/preview` (query params + mutual-exclusivity validation → `400`)
-  - [ ] d. `POST /digest/run` (no `notify.py` call)
+  - [x] d. `POST /digest/run` (no `notify.py` call)
   - [ ] e. `GET /digest/latest`
 
 ### Phase 6 — Documentation (`feature/phase-6-docs`)

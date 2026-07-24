@@ -16,6 +16,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query
 
 import accounts_store
 import digest
+import state
 
 app = FastAPI(title="Ergasia Digest")
 
@@ -54,3 +55,20 @@ def digest_preview(
 
     results = digest.fetch_all_events(since_override=since_override, accounts=accounts)
     return digest.build_digest(results)
+
+
+@app.post("/digest/run", dependencies=[Depends(require_api_key)])
+def digest_run() -> dict:
+    """Fetch + build + update state + cache. No notify.py call — sending
+    to chat is deferred to the agentic harness reading this response (or
+    /digest/latest), see PLAN.md §4/§6. No ?hours/?days here either —
+    always incremental via last_run, so state never gets a gap or overlap."""
+    results = digest.fetch_all_events()
+    rendered = digest.build_digest(results)
+
+    for result in results:
+        if "error" not in result:
+            state.set_last_run(result["account"]["id"], result["fetched_at"])
+
+    state.save_latest_digest(rendered["text"], rendered["data"])
+    return rendered
