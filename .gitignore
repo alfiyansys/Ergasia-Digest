@@ -1,0 +1,13 @@
+# Secrets — never commit real account tokens or the service API key
+accounts.json
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# OS/editor cruft
+.DS_Store
