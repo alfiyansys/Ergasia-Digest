@@ -225,11 +225,11 @@ Work is organized into phases. Each phase gets its own `feature/phase-<n>-<slug>
 
 ### Phase 4 — Digest Core (`feature/phase-4-digest-core`)
 
-- [ ] **4.1. Write `digest.py`**:
+- [x] **4.1. Write `digest.py`**:
   - [x] a. `fetch_all_events(since_override=None)` — resolve per-account `since` (override > `last_run` > `DEFAULT_LOOKBACK_HOURS = 24`), call the matching source client, catch per-account fetch failures without stopping the loop
   - [x] b. Compute per-account metrics (commits created; PR/MR opened & merged; issues opened & closed) from the normalized events
   - [x] c. `platform_label(account)` → `GitHub` / `GitLab` / account's `label` if set / generic `GitLab (self-hosted)` fallback — **never** the real `base_url` hostname (see §3)
-  - [ ] d. `build_digest(...)` — render the §3 text format + structured data, including the "fetch failed" block variant
+  - [x] d. `build_digest(...)` — render the §3 text format + structured data, including the "fetch failed" block variant
 
 ### Phase 5 — Interfaces (`feature/phase-5-interfaces`)
 

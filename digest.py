@@ -106,3 +106,63 @@ def platform_label(account: dict) -> str:
     if hostname == "gitlab.com":
         return "GitLab"
     return "GitLab (self-hosted)"
+
+
+def _count_phrase(count: int, singular: str, plural: str) -> str:
+    return f"{count} {singular if count == 1 else plural}"
+
+
+def _render_activities(account: dict, metrics: dict) -> str:
+    """§3: commits_created always shown (even 0); other metrics dropped
+    when 0. Uses "pull request" for github, "merge request" for gitlab."""
+    request_noun = "pull request" if account["type"] == "github" else "merge request"
+
+    parts = [_count_phrase(metrics["commits_created"], "commit created", "commits created")]
+    if metrics["prs_or_mrs_opened"]:
+        parts.append(_count_phrase(metrics["prs_or_mrs_opened"], f"{request_noun} opened", f"{request_noun}s opened"))
+    if metrics["prs_or_mrs_merged"]:
+        parts.append(_count_phrase(metrics["prs_or_mrs_merged"], f"{request_noun} merged", f"{request_noun}s merged"))
+    if metrics["issues_opened"]:
+        parts.append(_count_phrase(metrics["issues_opened"], "issue opened", "issues opened"))
+    if metrics["issues_closed"]:
+        parts.append(_count_phrase(metrics["issues_closed"], "issue closed", "issues closed"))
+
+    return ", ".join(parts)
+
+
+def build_digest(fetch_results: list[dict]) -> dict:
+    """Renders fetch_all_events() results into the §3 format: one
+    Platform/Username/Activities block per account (failed accounts get an
+    "Activities: fetch failed (...)" block instead of being skipped), plus
+    the structured per-account data behind it.
+
+    Returns {"text": str, "data": {"accounts": [...]}}.
+    """
+    blocks = []
+    account_data = []
+
+    for result in fetch_results:
+        account = result["account"]
+        label = platform_label(account)
+
+        if "error" in result:
+            activities = f"fetch failed ({result['error']})"
+            account_data.append({
+                "account_id": account["id"],
+                "platform": label,
+                "username": account["username"],
+                "error": result["error"],
+            })
+        else:
+            metrics = compute_metrics(result["events"])
+            activities = _render_activities(account, metrics)
+            account_data.append({
+                "account_id": account["id"],
+                "platform": label,
+                "username": account["username"],
+                "metrics": metrics,
+            })
+
+        blocks.append(f"Platform: {label}\nUsername: {account['username']}\nActivities: {activities}")
+
+    return {"text": "\n\n".join(blocks), "data": {"accounts": account_data}}
