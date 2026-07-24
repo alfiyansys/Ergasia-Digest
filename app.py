@@ -3,6 +3,8 @@
 No /accounts endpoint here by design — account management is CLI-only,
 see PLAN.md §2 / AGENTS.md. Every endpoint below (including /health, per a
 literal reading of PLAN.md §4's endpoint table) is gated by X-API-Key.
+There is no persistent state anywhere in this project — every call to
+/digest/run is a fresh live fetch from GitHub/GitLab (see AGENTS.md).
 """
 
 from __future__ import annotations
@@ -16,7 +18,6 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query
 
 import accounts_store
 import digest
-import state
 
 app = FastAPI(title="Ergasia Digest")
 
@@ -32,12 +33,16 @@ def health() -> dict:
     return {"status": "ok"}
 
 
-@app.get("/digest/preview", dependencies=[Depends(require_api_key)])
-def digest_preview(
+@app.post("/digest/run", dependencies=[Depends(require_api_key)])
+def digest_run(
     account: Optional[str] = Query(None),
     hours: Optional[int] = Query(None),
     days: Optional[int] = Query(None),
 ) -> dict:
+    """Fetch + build the digest, always live. No notify.py call — sending
+    to chat is deferred to the agentic harness reading this response
+    directly, see PLAN.md §4/§6. Nothing is persisted anywhere; defaults
+    to the last DEFAULT_LOOKBACK_HOURS unless overridden."""
     if hours is not None and days is not None:
         raise HTTPException(status_code=400, detail="hours and days are mutually exclusive")
 
@@ -55,19 +60,3 @@ def digest_preview(
 
     results = digest.fetch_all_events(since_override=since_override, accounts=accounts)
     return digest.build_digest(results)
-
-
-@app.post("/digest/run", dependencies=[Depends(require_api_key)])
-def digest_run() -> dict:
-    """Fetch + build + update state. No notify.py call — sending to chat
-    is deferred to the agentic harness reading this response directly,
-    see PLAN.md §4/§6. No ?hours/?days here either — always incremental
-    via last_run, so state never gets a gap or overlap."""
-    results = digest.fetch_all_events()
-    rendered = digest.build_digest(results)
-
-    for result in results:
-        if "error" not in result:
-            state.set_last_run(result["account"]["id"], result["fetched_at"])
-
-    return rendered
