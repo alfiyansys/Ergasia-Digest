@@ -241,7 +241,7 @@ Work is organized into phases. Each phase gets its own `feature/phase-<n>-<slug>
 
 - [ ] **5.2. `app.py`**:
   - [x] a. FastAPI skeleton + `X-API-Key` auth dependency (`secrets.compare_digest`)
-  - [ ] b. `GET /health`
+  - [x] b. `GET /health`
   - [ ] c. `GET /digest/preview` (query params + mutual-exclusivity validation → `400`)
   - [ ] d. `POST /digest/run` (no `notify.py` call)
   - [ ] e. `GET /digest/latest`
