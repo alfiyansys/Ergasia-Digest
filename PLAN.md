@@ -279,6 +279,6 @@ Added after Phase 7, per a follow-up request: [mrvi0/pyker](https://github.com/m
 - [x] **8.1. `run.py` entrypoint + dependency**:
   - [x] a. `run.py` — loads `.env` via `python-dotenv`, then `uvicorn.run("app:app", host="127.0.0.1", port=...)`. Needed because Pyker's CLI runs a plain `.py` script directly (`pyker start <name> <script.py>`), not an arbitrary command line — there's no other way to hand it an ASGI app.
   - [x] b. Add `python-dotenv` to `requirements.txt` — Pyker has no declarative env-file mechanism the way systemd (`EnvironmentFile=`) or docker-compose (`env_file:`) do, so `run.py` loads `.env` itself rather than depending on the invoking shell already having `API_KEY`/`PORT` exported.
-- [ ] **8.2. Update `README.md`** with a Pyker section: install, `pyker start ergasia-digest run.py --venv ./.venv`, `stop`/`restart`/`list`/`logs`, and the `--auto-restart` caveat from §7 stated plainly (not enforced by any monitor as of the reviewed source).
+- [x] **8.2. Update `README.md`** with a Pyker section: install, `pyker start ergasia-digest run.py --venv ./.venv`, `stop`/`restart`/`list`/`logs`, and the `--auto-restart` caveat from §7 stated plainly (not enforced by any monitor as of the reviewed source).
 
 Once this plan is approved, proceed phase by phase in order, checking off each box as it's completed and merging each phase branch into `dev` before starting the next.
