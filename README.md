@@ -54,9 +54,9 @@ Verifying account access... ok
 Account added: gitlab-gitlab.acme.example.com-bob
 
 $ python cli.py accounts list
-ID                                  TYPE    USERNAME  BASE_URL                         LABEL          LAST_RUN
-github-github.com-alice             github  alice     -                                -              2026-07-24T21:00:00+00:00
-gitlab-gitlab.acme.example.com-bob  gitlab  bob       https://gitlab.acme.example.com  GitLab (work)  -
+ID                                  TYPE    USERNAME  BASE_URL                         LABEL
+github-github.com-alice             github  alice     -                                -
+gitlab-gitlab.acme.example.com-bob  gitlab  bob       https://gitlab.acme.example.com  GitLab (work)
 
 $ python cli.py accounts delete gitlab-gitlab.acme.example.com-bob
 Account 'gitlab-gitlab.acme.example.com-bob' deleted.
@@ -105,28 +105,33 @@ itself but can't read events, which is exactly the failure
 ## Checking the digest (HTTP or CLI)
 
 Both interfaces call the same underlying logic and produce the same output.
+There's no persistent state anywhere — every call is a fresh live fetch
+from GitHub/GitLab, defaulting to the last 24 hours (`DEFAULT_LOOKBACK_HOURS`
+in `digest.py`), never based on when it was last called.
 
-**CLI** (works without the HTTP service running — reads/writes state files
-directly):
+**CLI** (works without the HTTP service running at all — there's no shared
+state to keep in sync):
 
 ```
-$ python cli.py digest preview                       # since each account's last run, or last 24h if new
-$ python cli.py digest preview --hours 6              # ad-hoc window override, no state touched
-$ python cli.py digest preview --account <id> --days 3
-$ python cli.py digest run                            # fetches + updates state, same as POST /digest/run
+$ python cli.py digest run                    # last 24 hours, every account
+$ python cli.py digest run --hours 6          # override the window
+$ python cli.py digest run --account <id> --days 3
 ```
 
 **HTTP** (requires the service running, see below):
 
 ```
-curl -H "X-API-Key: $API_KEY" http://127.0.0.1:8000/digest/preview
 curl -H "X-API-Key: $API_KEY" -X POST http://127.0.0.1:8000/digest/run
+curl -H "X-API-Key: $API_KEY" -X POST "http://127.0.0.1:8000/digest/run?hours=6"
 ```
 
-There's no cached "last result" endpoint/command — both interfaces only
-ever return the result of the call you just made. Don't run `cli.py
-digest run` and `POST /digest/run` at the same time — both write to the
-same `state.json` with no locking.
+`--hours`/`--days` (or `?hours=`/`?days=`) are mutually exclusive. Calling
+`digest run` repeatedly is completely safe — nothing is written anywhere,
+so there's no risk of state drift, but also no memory of previous calls:
+two runs close together can show overlapping activity, and a long gap
+between runs (e.g. the harness being down for a few days) means whatever
+happened before the last 24h window is simply not seen. That tradeoff was
+chosen deliberately in exchange for a much simpler, fully stateless design.
 
 ## Running locally
 
@@ -167,8 +172,9 @@ docker compose up -d --build
 
 The port is published to `127.0.0.1` only (not `0.0.0.0`), so the container
 is unreachable from outside the host — same posture as the bare-metal
-setup above. `accounts.json`/`state.json` live in `./data` on the host
-(bind-mounted), so they survive container rebuilds/restarts.
+setup above. `accounts.json` lives in `./data` on the host (bind-mounted),
+so it survives container rebuilds/restarts (there's no `state.json` — see
+"Checking the digest" above, this project keeps no persistent state).
 
 Account management is still CLI-only — with Docker, that means running
 `cli.py` inside the running container instead of directly on host shell:
@@ -184,14 +190,13 @@ with the gate being Docker daemon access (root/`docker` group) instead of
 SSH. There's no HTTP endpoint for account management in either mode.
 
 Docker Swarm is not recommended for this project: it's a single stateful
-instance by design (one `accounts.json`, one `state.json`), and a plain
-host-path bind mount like `./data` only stays consistent if the container
-never gets rescheduled to a different node — which Swarm's scheduler does
-by default. If you need to run this under Swarm anyway, pin it with
-`deploy.replicas: 1` and a `placement.constraints` entry for a specific
-node; otherwise a rescheduled container will start with an empty
-`accounts.json`/`state.json` (the original data isn't deleted, just
-inaccessible from wherever the container landed).
+instance by design (one `accounts.json`), and a plain host-path bind mount
+like `./data` only stays consistent if the container never gets rescheduled
+to a different node — which Swarm's scheduler does by default. If you need
+to run this under Swarm anyway, pin it with `deploy.replicas: 1` and a
+`placement.constraints` entry for a specific node; otherwise a rescheduled
+container will start with an empty `accounts.json` (the original data isn't
+deleted, just inaccessible from wherever the container landed).
 
 ### Pyker (lightweight alternative to systemd/Docker)
 

@@ -1,8 +1,10 @@
 """CLI entrypoint: account management (add/list/delete) + digest stats access.
 
 Account management is CLI-only by design — see PLAN.md §2 / AGENTS.md.
-Digest commands call digest.py/state.py directly (no HTTP round-trip), so
-they don't require app.py's uvicorn service to be running.
+Digest commands call digest.py directly (no HTTP round-trip), so they
+don't require app.py's uvicorn service to be running. There is no
+persistent state anywhere in this project — every call is a fresh live
+fetch from GitHub/GitLab (see AGENTS.md for why).
 """
 
 from __future__ import annotations
@@ -14,7 +16,6 @@ from getpass import getpass
 
 import accounts_store
 import digest
-import state
 from sources import github_source, gitlab_source
 
 
@@ -67,19 +68,17 @@ def cmd_accounts_list(args: argparse.Namespace) -> int:
         print("No accounts registered.")
         return 0
 
-    columns = ["id", "type", "username", "base_url", "label", "last_run"]
-    headers = ["ID", "TYPE", "USERNAME", "BASE_URL", "LABEL", "LAST_RUN"]
+    columns = ["id", "type", "username", "base_url", "label"]
+    headers = ["ID", "TYPE", "USERNAME", "BASE_URL", "LABEL"]
 
     rows = []
     for account in accounts:
-        last_run = state.get_last_run(account["id"])
         rows.append({
             "id": account["id"],
             "type": account["type"],
             "username": account["username"],
             "base_url": account.get("base_url") or "-",
             "label": account.get("label") or "-",
-            "last_run": last_run.isoformat() if last_run else "-",
         })
 
     widths = {c: max(len(h), *(len(r[c]) for r in rows)) for c, h in zip(columns, headers)}
@@ -93,7 +92,6 @@ def cmd_accounts_delete(args: argparse.Namespace) -> int:
     if not accounts_store.delete_account(args.id):
         print(f"Error: account '{args.id}' not found", file=sys.stderr)
         return 1
-    state.delete_account_state(args.id)
     print(f"Account '{args.id}' deleted.")
     return 0
 
@@ -109,7 +107,10 @@ def _resolve_accounts(account_id: str | None) -> list[dict] | None:
     return accounts
 
 
-def cmd_digest_preview(args: argparse.Namespace) -> int:
+def cmd_digest_run(args: argparse.Namespace) -> int:
+    """Fetch + build the digest, always live — equivalent to POST /digest/run.
+    Defaults to the last DEFAULT_LOOKBACK_HOURS; --hours/--days override that
+    window, --account filters to one account. Nothing is persisted anywhere."""
     if args.hours is not None and args.days is not None:
         print("Error: --hours and --days are mutually exclusive", file=sys.stderr)
         return 1
@@ -126,21 +127,6 @@ def cmd_digest_preview(args: argparse.Namespace) -> int:
 
     results = digest.fetch_all_events(since_override=since_override, accounts=accounts)
     rendered = digest.build_digest(results)
-    print(rendered["text"])
-    return 0
-
-
-def cmd_digest_run(args: argparse.Namespace) -> int:
-    """Equivalent to POST /digest/run: fetch + build + update state.
-    No --hours/--days override (see PLAN.md §4) — always incremental via
-    last_run, so state never gets a gap or overlap."""
-    results = digest.fetch_all_events()
-    rendered = digest.build_digest(results)
-
-    for result in results:
-        if "error" not in result:
-            state.set_last_run(result["account"]["id"], result["fetched_at"])
-
     print(rendered["text"])
     return 0
 
@@ -170,13 +156,10 @@ def build_parser() -> argparse.ArgumentParser:
     digest_parser = subparsers.add_parser("digest", help="Digest operations")
     digest_sub = digest_parser.add_subparsers(dest="digest_command", required=True)
 
-    preview_parser = digest_sub.add_parser("preview", help="Preview the digest without updating state")
-    preview_parser.add_argument("--account", default=None)
-    preview_parser.add_argument("--hours", type=int, default=None)
-    preview_parser.add_argument("--days", type=int, default=None)
-    preview_parser.set_defaults(func=cmd_digest_preview)
-
-    run_parser = digest_sub.add_parser("run", help="Run the digest: fetch, build, update state")
+    run_parser = digest_sub.add_parser("run", help="Fetch + build the digest (always live, nothing persisted)")
+    run_parser.add_argument("--account", default=None)
+    run_parser.add_argument("--hours", type=int, default=None)
+    run_parser.add_argument("--days", type=int, default=None)
     run_parser.set_defaults(func=cmd_digest_run)
 
     return parser

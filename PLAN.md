@@ -15,7 +15,6 @@ ergasia-digest/
 ├── accounts_store.py       # Account CRUD: load/save/add/list/delete (reads/writes accounts.json) — called by cli.py, read-only from digest.py
 ├── accounts.json            # (git-ignored, chmod 600) Active account data — managed via cli.py, never edited manually or over HTTP
 ├── accounts.example.json    # Example account schema (no real tokens) — for documentation
-├── state.py                # Tracks last-run timestamp per account (no longer per-source)
 ├── notify.py                # (deferred, not wired up yet — see §4) Sends digest output (Slack / generic webhook / stdout)
 ├── requirements.txt
 ├── .env.example
@@ -23,7 +22,9 @@ ergasia-digest/
 └── README.md                 # Install, config, deploy, cron instructions
 ```
 
-**Current status (as of Phase 1):** `.gitignore`, `.env.example`, `accounts.example.json`, and `requirements.txt` are done. Everything else — `accounts_store.py`, `state.py`, `sources/github_source.py`, `sources/gitlab_source.py`, `digest.py`, `cli.py`, `app.py`, `README.md` — is being written from scratch; none of it pre-exists anywhere. (An earlier draft of this plan assumed `sources/`, `state.py`, and `notify.py` already existed from prior work — that turned out to be wrong, no such files were found on disk, so §8 below is written as greenfield implementation, not a refactor of existing code. `notify.py` is deferred per §4 and isn't being written in any phase below; it can be added later if the harness ever needs a direct-send fallback.)
+**Current status (as of Phase 1):** `.gitignore`, `.env.example`, `accounts.example.json`, and `requirements.txt` are done. Everything else — `accounts_store.py`, `sources/github_source.py`, `sources/gitlab_source.py`, `digest.py`, `cli.py`, `app.py`, `README.md` — is being written from scratch; none of it pre-exists anywhere. (An earlier draft of this plan assumed `sources/`, `state.py`, and `notify.py` already existed from prior work — that turned out to be wrong, no such files were found on disk, so §8 below is written as greenfield implementation, not a refactor of existing code. `notify.py` is deferred per §4 and isn't being written in any phase below; it can be added later if the harness ever needs a direct-send fallback.)
+
+**No persistent state, anywhere.** A `state.py` module existed briefly (Phase 2) tracking per-account `last_run` timestamps to drive incremental fetching, plus a short-lived digest cache (removed even earlier). Both were removed by explicit request: every digest call — CLI or HTTP — is a fresh live fetch from GitHub/GitLab with a fixed rolling lookback window (or an explicit override), never anything based on when it was last called. See §4/§6/§8 for what this changed, and `AGENTS.md` for why not to re-add it without checking first.
 
 ## 2. Account Management (CLI-only) & Multi-GitLab-Endpoint
 
@@ -52,7 +53,7 @@ If verification fails, the account is **not** written to `accounts.json` — `ac
 ```
 
 Fields:
-- `id` — unique, used as the `last_run` tracking key in `state.py` and for internal lookups (`?account=<id>` / `--account`). Optional on `accounts add`; if omitted, it's auto-generated from `{type}-{host}-{username}` (`host` = `github.com` for GitHub, or the hostname from `base_url` for GitLab). This `id` is **internal only** — it's used in `cli.py`/local API calls, never printed as the platform tag in digest output (that's `label`, below), so it embedding the real self-hosted hostname is not itself an external leak.
+- `id` — unique, used for internal lookups (`?account=<id>` / `--account`). Optional on `accounts add`; if omitted, it's auto-generated from `{type}-{host}-{username}` (`host` = `github.com` for GitHub, or the hostname from `base_url` for GitLab). This `id` is **internal only** — it's used in `cli.py`/local API calls, never printed as the platform tag in digest output (that's `label`, below), so it embedding the real self-hosted hostname is not itself an external leak.
 - `type` — `github` or `gitlab`.
 - `username` — username on the relevant platform.
 - `api_key` — personal access token for accessing the GitHub/GitLab Events API on behalf of this account (entered via hidden prompt, see above). **This is different from the service's `API_KEY`** (see §4 Auth) — the term "API key" here refers to the tracked account's own token, not the shared secret that protects Ergasia Digest's HTTP endpoints.
@@ -78,9 +79,9 @@ Verifying account access... failed: token is valid but missing 'read_api' scope 
 Account not added.
 
 $ python cli.py accounts list
-ID                                   TYPE    USERNAME  BASE_URL                   LABEL           LAST_RUN
-github-github.com-alice              github  alice     github.com                 -               2026-07-24T21:00:00+07:00
-gitlab-gitlab.acme.example.com-bob   gitlab  bob       gitlab.acme.example.com    GitLab (work)   -
+ID                                   TYPE    USERNAME  BASE_URL                   LABEL
+github-github.com-alice              github  alice     github.com                 -
+gitlab-gitlab.acme.example.com-bob   gitlab  bob       gitlab.acme.example.com    GitLab (work)
 
 $ python cli.py accounts delete gitlab-gitlab.acme.example.com-bob
 Account 'gitlab-gitlab.acme.example.com-bob' deleted.
@@ -92,8 +93,7 @@ Rules:
 - `type: gitlab` can be registered multiple times with different `base_url`s (gitlab.com, other self-hosted GitLab instances) — no separate instance needed, just a new `accounts add`.
 - `type: github` can also be registered multiple times, for several GitHub accounts/organizations at once.
 - `digest.py` (`fetch_all_events()`) iterates over every account in `accounts.json` (read via `accounts_store.py`), calling `github_source.py`/`gitlab_source.py` per `type` with that account's parameters, then tags each event with `account_id` so `build_digest()` can group results per account in the final summary (exact format in §3).
-- If one account fails to fetch (rate limit / network error), the other accounts still get processed; the failed account's `last_run` is **not** updated, so its window isn't lost on the next run.
-- `accounts delete` also cleans up the associated `last_run` entry in `state.py`, so no stale state is left hanging around.
+- If one account fails to fetch (rate limit / network error), the other accounts still get processed and rendered — see §3's "fetch failed" block.
 
 **Security:** since each account's `api_key` is stored directly in `accounts.json`, this file **must** be in `.gitignore` and have restricted permissions (`chmod 600`). `accounts list` never shows the raw `api_key` — only a masked version (e.g. last 4 characters).
 
@@ -142,24 +142,23 @@ HTTP endpoints are **read-only for digest data** — there is no endpoint for ma
 | Method | Path               | Purpose |
 |--------|--------------------|---------|
 | GET    | `/health`          | Check that the service is alive. |
-| GET    | `/digest/preview`  | Fetch + build digest (format in §3) from every account in `accounts.json`, **returned as JSON/text** — no state update, no push to the notify target. For manual checks. Takes an optional `?account=<id>` query param to check a single account, and `?hours=<N>` / `?days=<N>` to override the window (see note below the table). |
-| POST   | `/digest/run`      | Fetch + build (format in §3) + update per-account state (`last_run`). **No longer pushes to a notify target** — sending to Slack/OpenClaw is deferred, now the agentic harness's responsibility, reading this endpoint's response directly and sending its own notification. This is the endpoint called by cron/the harness. |
+| POST   | `/digest/run`      | Fetch + build digest (format in §3) from every account in `accounts.json` (or a filtered subset), **returned as JSON/text**. Always a fresh live fetch — nothing is persisted anywhere, so calling this repeatedly is completely safe. **Doesn't push to a notify target** — sending to Slack/OpenClaw is the agentic harness's responsibility, reading this endpoint's response directly and sending its own notification. This is the endpoint called by cron/the harness, and also the one used for ad-hoc manual checks — there's no separate "preview" endpoint (see below for why). |
 
-There is deliberately no `/digest/latest` / cached-result endpoint. Both the CLI and HTTP callers only ever need the result of the one `run`/`preview` call they just made — there's no case in this project where something needs to fetch a *previous* result without re-running, so a caching layer would just be complexity with no consumer. `state.json` only ever tracks `last_run`.
+There is deliberately no `/digest/latest` / cached-result endpoint, and no persistent state of any kind (`state.py` existed briefly and was removed — see §1's note and `AGENTS.md`). Every call is a fresh fetch; there's no case in this project where something needs a *previous* result without re-running, or an incremental window based on when it was last called.
 
-**Equivalent CLI commands** (called directly, no `curl` needed, but only requires `app.py`/the service to be running if you want state to stay in sync with HTTP — see note below):
+`/digest/run` used to be two separate things — `/digest/preview` (read-only, ad-hoc, supported `?hours=`/`?days=`) and `/digest/run` (updated `last_run`, no window override, called by the harness). Once neither one touches state, that distinction had nothing left to it, so they were merged into the one endpoint above, which always supports `?account=`/`?hours=`/`?days=`.
+
+**Equivalent CLI command** (called directly, no `curl` needed — doesn't require `app.py`/the service to be running at all, since there's no shared state to keep in sync):
 
 ```
-$ python cli.py digest preview --hours 6
-$ python cli.py digest preview --account gitlab-gitlab.acme.example.com-bob --days 3
-$ python cli.py digest run       # equivalent to POST /digest/run: fetches + updates state
+$ python cli.py digest run --hours 6
+$ python cli.py digest run --account gitlab-gitlab.acme.example.com-bob --days 3
+$ python cli.py digest run       # default window, see below
 ```
-
-`cli.py digest ...` calls `digest.py`/`state.py` directly (not over HTTP), so it **doesn't require the `uvicorn` service to be running** for `preview`/`run` (it reads/writes the same files on disk directly). Because of this, don't run `cli.py digest run` at the same time as `POST /digest/run` from the harness/cron — both write to the same `state.json` with no file-locking (out of scope for a tool this small); use one or the other at a time.
 
 **Auth:** the HTTP endpoints above are protected by a simple shared secret (`X-API-Key` header), checked against the `API_KEY` env var. This is different from the per-account `api_key` in §2 — `API_KEY` here is a secret belonging to the Ergasia Digest service itself, gating who's allowed to call its HTTP endpoints at all. Good enough for an internal tool — no need for OAuth. The CLI (`cli.py`) doesn't go through this gate, since its access is already restricted to shell/SSH access on the host (see §2 and §7).
 
-**Window parameter (`/digest/preview` & `cli.py digest preview`):** besides `?account=<id>` (or `--account`), both also accept `hours=<N>` or `days=<N>` (pick one — an error if both are set at once) to override the fetch window to "the last N hours/days from now," regardless of each account's `last_run`. Useful for ad-hoc checks, e.g. "what happened in the last 3 days" without waiting on/caring about incremental state. If this parameter isn't provided, the default behavior applies: fetch since each account's `last_run`, or `DEFAULT_LOOKBACK_HOURS = 24` if the account is newly added and has never had a `last_run`. This is also the effective window for the harness's daily call (see §6) — since it's called once every 24 hours, `last_run` is always ~24 hours back, consistent with the default 24-hour window when no parameter is given. This parameter is deliberately **not supported** on `/digest/run`/`cli.py digest run` — both must stay consistent with incremental `last_run` so a custom window never creates a gap or overlap when used to update state.
+**Window parameter (`/digest/run` & `cli.py digest run`):** besides `?account=<id>` (or `--account`), both also accept `hours=<N>` or `days=<N>` (pick one — an error if both are set at once) to override the fetch window to "the last N hours/days from now." If this parameter isn't provided, the default is always `DEFAULT_LOOKBACK_HOURS = 24` — a fixed rolling window, **not** based on when the account was last checked. This was a deliberate, explicitly-requested design change (see §1's note): calling `digest run` twice within an hour and expecting each call to independently mean "the last 24 hours" is the desired behavior here, even though that means two runs close together can double-count activity, and a gap longer than 24h between calls (e.g. the harness being down for a couple of days) will miss whatever happened before that window. That tradeoff was accepted explicitly in exchange for a much simpler, fully stateless design.
 
 **Note on notify.py:** this module is **not** part of any phase in §8 — sending notifications is deferred to the agentic harness so it can be more flexible (e.g. LLM-based filtering/formatting before sending), so there's nothing to build here for now. If the harness ever needs a direct-send fallback from the service, add `notify.py` and wire it into `/digest/run` as its own future phase, revisited explicitly rather than assumed.
 
@@ -179,7 +178,7 @@ If OS cron is ever needed as an alternative/fallback (e.g. if the harness is dow
 0 21 * * * curl -s -X POST -H "X-API-Key: $ERGASIA_KEY" http://127.0.0.1:8000/digest/run
 ```
 
-The service still runs continuously (systemd unit / uvicorn) so it can be called anytime — by the scheduled harness, a manual `curl`, or `/digest/preview` for an ad-hoc check (with or without the `?hours=`/`?days=` override) without waiting for the daily schedule. Accounts are still managed via `cli.py` (§2) on the same host — not over HTTP.
+The service still runs continuously (systemd unit / uvicorn) so it can be called anytime — by the scheduled harness, or a manual `curl`/`cli.py digest run` for an ad-hoc check (with or without the `?hours=`/`?days=` override), without waiting for the daily schedule and without any state to keep consistent between calls. Accounts are still managed via `cli.py` (§2) on the same host — not over HTTP.
 
 ## 7. Deployment
 
@@ -189,7 +188,7 @@ The service still runs continuously (systemd unit / uvicorn) so it can be called
 - `cli.py` can/should only be run directly on the host where `accounts.json` lives (local filesystem access) — not exposed over the network. If accounts need to be managed remotely, that access should go through SSH to the host, not a new HTTP endpoint built for it.
 - `accounts.json` contains raw tokens for every account — make sure its file permissions are `600`, it's in `.gitignore`, and it's included in whatever backup mechanism the host has, so account tokens aren't lost if the file gets corrupted or deleted.
 
-**Docker (optional, see Phase 7 in §8):** the container binds `0.0.0.0:8000` internally (required for Docker's port mapping to reach it — `127.0.0.1` inside the container isn't reachable from the host), but the port is only published to the host's loopback (`127.0.0.1:8000:8000`), preserving the same "not exposed externally" posture as bare-metal. `accounts.json`/`state.json` move to a mounted `/data` volume (via `ACCOUNTS_FILE`/`STATE_FILE` env vars) rather than living next to the source inside the image, so they persist across container rebuilds. The CLI-only account-management model still holds — `cli.py accounts add` runs via `docker exec` into the running container instead of directly on host shell, which requires Docker daemon access (root/`docker` group), an equivalent-or-stronger gate than plain SSH.
+**Docker (optional, see Phase 7 in §8):** the container binds `0.0.0.0:8000` internally (required for Docker's port mapping to reach it — `127.0.0.1` inside the container isn't reachable from the host), but the port is only published to the host's loopback (`127.0.0.1:8000:8000`), preserving the same "not exposed externally" posture as bare-metal. `accounts.json` moves to a mounted `/data` volume (via the `ACCOUNTS_FILE` env var) rather than living next to the source inside the image, so it persists across container rebuilds (there's no `state.json`/`STATE_FILE` anymore — see §1's statelessness note). The CLI-only account-management model still holds — `cli.py accounts add` runs via `docker exec` into the running container instead of directly on host shell, which requires Docker daemon access (root/`docker` group), an equivalent-or-stronger gate than plain SSH.
 
 **Pyker (optional, see Phase 8 in §8):** a lightweight, no-root, single-file Python process manager ([mrvi0/pyker](https://github.com/mrvi0/pyker)) — a simpler alternative to systemd/Docker for someone who just wants `start`/`stop`/`restart`/`list`/`logs` on a plain host. Since Pyker runs a `.py` script directly (`pyker start <name> <script.py>`) rather than an arbitrary command line, it needs a small `run.py` wrapper that calls `uvicorn.run("app:app", ...)`. **Caveat found by reading the actual source** (not just its README): Pyker's `--auto-restart` flag is stored in its state file but, as of the version reviewed, nothing in the codebase actually monitors and restarts a crashed process — there's no daemon/watch loop. Don't rely on Pyker alone for crash recovery; if that matters, use systemd or Docker's `restart:` policy instead. CLI-only account management is unaffected — Pyker doesn't containerize anything, so `cli.py` still just runs directly on the same host shell, same as plain bare-metal.
 
@@ -216,10 +215,7 @@ Work is organized into phases. Each phase gets its own `feature/phase-<n>-<slug>
   - [x] d. `list_accounts()` with `api_key` masked (last 4 chars) — `base_url`/`label` shown as-is, this output stays local (§2)
   - [x] e. `delete_account(id)`
 
-- [x] **2.2. `state.py`** — per-account `last_run` tracking:
-  - [x] a. Change the tracking key from per-source to per-`account_id`: `get_last_run(account_id)` / `set_last_run(account_id, ts)`
-  - [x] b. `delete_account_state(account_id)` — called from `accounts_store.delete_account` / `cli.py accounts delete`
-  - ~~c. `save_latest_digest(text, data)` / `get_latest_digest()`~~ — **removed** after the fact: there's no consumer that needs a cached previous result rather than just re-running `preview`/`run`, so this was pure unused complexity (see §4's note). `state.json` only ever holds `last_run`.
+~~**2.2. `state.py`** — per-account `last_run` tracking~~ — **the entire module was removed**, in two steps: first its unused digest-cache functions (`save_latest_digest`/`get_latest_digest` — no consumer ever needed a cached previous result instead of just re-running), then `get_last_run`/`set_last_run`/`delete_account_state` themselves once the default fetch window was changed to a fixed rolling lookback instead of "since last checked" (explicit request — see §1's statelessness note and §4). There is no state file anywhere in this project anymore.
 
 ### Phase 3 — Source Clients (`feature/phase-3-source-clients`)
 
@@ -231,7 +227,7 @@ Work is organized into phases. Each phase gets its own `feature/phase-<n>-<slug>
 ### Phase 4 — Digest Core (`feature/phase-4-digest-core`)
 
 - [x] **4.1. Write `digest.py`**:
-  - [x] a. `fetch_all_events(since_override=None)` — resolve per-account `since` (override > `last_run` > `DEFAULT_LOOKBACK_HOURS = 24`), call the matching source client, catch per-account fetch failures without stopping the loop
+  - [x] a. `fetch_all_events(since_override=None)` — resolve `since` (override, else `DEFAULT_LOOKBACK_HOURS = 24`; ~~originally per-account `last_run`, removed later, see Phase 2~~), call the matching source client, catch per-account fetch failures without stopping the loop
   - [x] b. Compute per-account metrics (commits created; PR/MR opened & merged; issues opened & closed) from the normalized events
   - [x] c. `platform_label(account)` → `GitHub` / `GitLab` / account's `label` if set / generic `GitLab (self-hosted)` fallback — **never** the real `base_url` hostname (see §3)
   - [x] d. `build_digest(...)` — render the §3 text format + structured data, including the "fetch failed" block variant
@@ -240,16 +236,16 @@ Work is organized into phases. Each phase gets its own `feature/phase-<n>-<slug>
 
 - [x] **5.1. `cli.py`**:
   - [x] a. `accounts add` (`--label` flag for the digest-safe display name; `getpass` prompt for `api_key`; calls `sources.*.verify_access(...)` first and only calls `accounts_store.add_account` if it passes — print the failure reason and exit non-zero without writing anything if it doesn't)
-  - [x] b. `accounts list` / `accounts delete` (join `last_run` from `state.py` for `list`; call `state.py` cleanup on `delete`)
-  - [x] c. `digest preview` (`--account`/`--hours`/`--days`, mutually-exclusive validation)
-  - [x] d. `digest run` (~~/ `digest latest`~~ — removed, see §4/§8 Phase 2 note; no cached-result consumer exists)
+  - [x] b. `accounts list` / `accounts delete` (~~join `last_run` from `state.py` for `list`; call `state.py` cleanup on `delete`~~ — removed once `state.py` was, see Phase 2; `list` no longer has a LAST_RUN column, `delete` has nothing left to clean up)
+  - ~~c. `digest preview` (`--account`/`--hours`/`--days`, mutually-exclusive validation)~~ — **merged into `digest run`** (d) once neither command touched state and the two became behaviorally identical; see §4
+  - [x] d. `digest run` — now the single digest command, taking `--account`/`--hours`/`--days` (mutually-exclusive validation) that `preview` used to have (~~`digest latest`~~ was already removed earlier, see §4/§8 Phase 2 note)
 
 - [x] **5.2. `app.py`**:
   - [x] a. FastAPI skeleton + `X-API-Key` auth dependency (`secrets.compare_digest`)
   - [x] b. `GET /health`
-  - [x] c. `GET /digest/preview` (query params + mutual-exclusivity validation → `400`)
-  - [x] d. `POST /digest/run` (no `notify.py` call)
-  - ~~e. `GET /digest/latest`~~ — removed for the same reason
+  - ~~c. `GET /digest/preview` (query params + mutual-exclusivity validation → `400`)~~ — **merged into `POST /digest/run`** (d), same reasoning as `cli.py` above
+  - [x] d. `POST /digest/run` (no `notify.py` call) — now also takes the `?account=`/`?hours=`/`?days=` params `/digest/preview` used to have
+  - ~~e. `GET /digest/latest`~~ — removed earlier for a different reason (unused cache, see §4)
 
 ### Phase 6 — Documentation (`feature/phase-6-docs`)
 
@@ -261,14 +257,14 @@ Added after the original 6-phase plan was completed, per a follow-up request to 
 
 - [x] **7.1. Env-var overrides for data file paths**:
   - [x] a. `accounts_store.py`: `ACCOUNTS_FILE = os.environ.get("ACCOUNTS_FILE", <default next-to-source path>)` — same default as before if unset, so bare-metal/CLI usage is unaffected
-  - [x] b. `state.py`: same pattern for `STATE_FILE`
-  - [x] c. Rationale: bind-mounting *individual files* that don't yet exist is a known Docker footgun (Docker can silently create a directory instead of a file); mounting a whole `/data` directory and pointing both files at it via env var avoids that entirely, without changing bare-metal behavior at all
+  - ~~b. `state.py`: same pattern for `STATE_FILE`~~ — moot, `state.py` was deleted entirely afterward (see Phase 2)
+  - [x] c. Rationale: bind-mounting *individual files* that don't yet exist is a known Docker footgun (Docker can silently create a directory instead of a file); mounting a whole `/data` directory and pointing `ACCOUNTS_FILE` at it via env var avoids that entirely, without changing bare-metal behavior at all
 - [x] **7.2. `Dockerfile` + `.dockerignore`**:
   - [x] a. `Dockerfile`: `python:3.12-slim` base, install `requirements.txt`, copy source, `EXPOSE 8000`, `CMD uvicorn app:app --host 0.0.0.0 --port 8000` (must be `0.0.0.0` inside the container — see §7 note on why this doesn't weaken the "not exposed externally" posture)
-  - [x] b. `.dockerignore`: exclude `.venv/`, `__pycache__/`, `.git/`, `accounts.json`, `state.json`, `.env` — none of those belong baked into an image
+  - [x] b. `.dockerignore`: exclude `.venv/`, `__pycache__/`, `.git/`, `accounts.json`, `.env` — none of those belong baked into an image (originally also excluded `state.json`, dropped once `state.py` was removed)
 - [x] **7.3. `docker-compose.yml`**:
   - [x] a. `ports: ["127.0.0.1:8000:8000"]` — published to host loopback only, not `0.0.0.0`, so the container isn't reachable from outside the host despite binding `0.0.0.0` internally
-  - [x] b. `env_file: .env`, plus `ACCOUNTS_FILE=/data/accounts.json` / `STATE_FILE=/data/state.json`
+  - [x] b. `env_file: .env`, plus `ACCOUNTS_FILE=/data/accounts.json` (originally also `STATE_FILE=/data/state.json`, dropped once `state.py` was removed)
   - [x] c. `volumes: ["./data:/data"]` — one directory mount, not per-file, so Docker creates it cleanly if missing
 - [x] **7.4. Update `README.md`** with a Docker section: `docker compose up -d`, and `docker compose exec ergasia-digest python cli.py accounts add ...` as the Docker-mode equivalent of running `cli.py` directly on host shell
 
