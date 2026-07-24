@@ -6,13 +6,13 @@ A small FastAPI webservice that pulls activity from GitHub + GitLab (multi-accou
 
 ## Status
 
-Progress is tracked via the checkboxes in `PLAN.md` §8 — check there for what's actually done rather than trusting this file's wording, since it can go stale. As of Phase 1, only scaffolding exists (`.gitignore`, `.env.example`, `accounts.example.json`, `requirements.txt`); every module (`accounts_store.py`, `state.py`, `sources/*.py`, `digest.py`, `cli.py`, `app.py`) is being written from scratch, not refactored from prior code — an earlier draft of `PLAN.md` wrongly assumed some of these already existed; that assumption was corrected once no such files turned up anywhere on disk. If asked to "continue the implementation" without further detail, follow the phase/step order in `PLAN.md` §8 as-is — don't reorder or skip steps without asking.
+Progress is tracked via the checkboxes in `PLAN.md` §8 — check there for what's actually done rather than trusting this file's wording, since it can go stale. Phases 1-6 (the original plan) are complete: `accounts_store.py`, `state.py`, `sources/github_source.py`, `sources/gitlab_source.py`, `digest.py`, `cli.py`, `app.py`, and `README.md` all exist and were smoke-tested as they were built — every module was written from scratch (an earlier draft of `PLAN.md` wrongly assumed some of these already existed; that was corrected once no such files turned up anywhere on disk). Phase 7 (Docker) was added afterward as a follow-up request. If asked to "continue the implementation" without further detail, follow the phase/step order in `PLAN.md` §8 as-is — don't reorder or skip steps without asking.
 
 **Check off the corresponding `- [ ]` box in `PLAN.md` §8 (`- [ ]` → `- [x]`) as soon as a step or lettered sub-step is actually done** — include that edit in the same commit as the step itself, not as a separate batch-update pass later. `PLAN.md` §8 is the one place progress is tracked across sessions, so an unchecked box must mean "not done yet," not "done but forgot to mark it."
 
 ## Rules not to break without discussing first
 
-- **Account management (`add`/`list`/`delete`) is CLI-only, via `cli.py`.** Don't build an HTTP `/accounts` endpoint in any form — this is a deliberate decision (§2), not something that just hasn't been gotten to yet. Reason: accepting raw tokens over the network adds attack surface for the most sensitive operation in this service.
+- **Account management (`add`/`list`/`delete`) is CLI-only, via `cli.py`.** Don't build an HTTP `/accounts` endpoint in any form — this is a deliberate decision (§2), not something that just hasn't been gotten to yet. Reason: accepting raw tokens over the network adds attack surface for the most sensitive operation in this service. Under Docker (Phase 7), this becomes `docker exec <container> python cli.py accounts ...` instead of a host shell — still gated by Docker daemon access, not the network.
 - **`accounts.json` stores raw per-account tokens.** It must be in `.gitignore`, and must be `chmod 600`. Never log its contents or echo back a raw `api_key` from `cli.py accounts list` (mask it, e.g. show only the last 4 characters).
 - **Two different meanings of "API key" — don't conflate them:** the per-account `api_key` (the GitHub/GitLab token belonging to a tracked account, stored in `accounts.json`) vs. the service's `API_KEY` (an env var, checked from the `X-API-Key` header to protect HTTP endpoints). When naming variables/parameters, use clearly distinct names (e.g. `account_api_key` vs. `service_api_key`) — don't just call everything `api_key`.
 - **`notify.py` is deliberately not wired into any endpoint or command.** This is deferred by design (an external harness sends notifications instead), not a TODO that needs finishing urgently. Don't call it from `/digest/run` or `cli.py digest run` without an explicit discussion first.
@@ -23,11 +23,12 @@ Progress is tracked via the checkboxes in `PLAN.md` §8 — check there for what
 - **`cli.py digest run` and `POST /digest/run` read/write the same state/cache files with no locking.** Don't run both at the same time; this is a deliberate choice to avoid over-engineering file-locking into a tool this small internally — don't "fix" it by adding locking unless asked.
 - **`cli.py accounts add` must verify live access before persisting an account** (`PLAN.md` §2) — call `sources.*.verify_access(...)` (auth + read-scope check against the real platform) and only write to `accounts.json` if it passes; otherwise print the failure reason and write nothing. This check is about API access, not activity — a valid token with zero recent events must still pass. There's no bypass flag by design; don't add one unless asked. Verification logic belongs in `sources/*.py`, not `accounts_store.py` — keep the storage module free of network calls.
 
-## Code conventions (planned — follow once `app.py`/`cli.py` are built)
+## Code conventions
 
 - `digest.py` (`fetch_all_events()`, `build_digest()`) must stay pure functions — shared by both `app.py` (HTTP) and `cli.py` (CLI) with no logic duplication. If adding a digest feature, put the logic here, not in `app.py`/`cli.py`.
 - `sources/github_source.py` and `sources/gitlab_source.py` take credentials/parameters (`base_url`, `username`, `token`, `since`) as function arguments — don't read env vars directly inside these modules, since that would make multi-account support impossible (there's no single "the" token/host once there's more than one account).
 - `state.py` tracks the `last_run` key per `account_id`, not per-source.
+- `accounts_store.ACCOUNTS_FILE` / `state.STATE_FILE` are overridable via the `ACCOUNTS_FILE`/`STATE_FILE` env vars (Phase 7), defaulting to the same next-to-source path as before if unset — this exists so Docker can point them at a mounted `/data` volume without bind-mounting individual files (a known Docker footgun). Bare-metal/CLI behavior is unaffected either way.
 
 ## Git Workflow
 
