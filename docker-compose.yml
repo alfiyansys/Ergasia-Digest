@@ -15,6 +15,5 @@ services:
       # A directory mount, not a per-file one — avoids the Docker footgun
       # where bind-mounting an individual file that doesn't exist yet
       # silently creates a directory instead (see PLAN.md §8 Phase 7).
-      - ./accounts.json:/data/accounts.json
       - ./data:/data
     restart: unless-stopped
