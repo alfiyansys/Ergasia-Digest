@@ -30,12 +30,23 @@ def _parse_timestamp(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
+_COMMIT_SPIKE_THRESHOLD = 500
+
+
 def _count_push_commits(repo_full_name: str, before: str, head: str, token: str) -> int:
     """GitHub's Events API no longer includes a `commits` list (or even a
     `size`/`distinct_size` count) in PushEvent payloads — verified against
     a real account: the payload only carries `ref`/`head`/`before` now.
     The Compare API's `total_commits` is the accurate way to count commits
-    in a push today."""
+    in a push today.
+
+    A push event happens at a point in time; the user's real activity in the
+    window is bounded by how many commits they can reasonably author. When
+    the Compare API reports an implausible spike (fork syncs, re-parented
+    history, force-pushes, upstream merges), trust the PushEvent: count it
+    as a small, sane number instead of the full divergence distance (see
+    PLAN.md §4 — the digest is an activity digest, not a history-distance
+    report)."""
     if before == "0" * 40:
         # New branch with no prior history to diff against — can't measure
         # "commits added" precisely; count the push itself as one commit
@@ -48,7 +59,12 @@ def _count_push_commits(repo_full_name: str, before: str, head: str, token: str)
     )
     if resp.status_code != 200:
         return 1  # can't determine the exact count; don't undercount to 0
-    return resp.json().get("total_commits", 1)
+    total = resp.json().get("total_commits", 1)
+    if total > _COMMIT_SPIKE_THRESHOLD:
+        # Diverged fork / rebase / re-parent: total_commits is the distance
+        # between unrelated histories, not the commits pushed in this event.
+        return 1
+    return total
 
 
 def _normalize_event(event: dict, created_at: datetime, token: str) -> list[dict]:
