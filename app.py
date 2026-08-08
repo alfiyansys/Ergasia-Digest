@@ -14,7 +14,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query
 
 import accounts_store
 import digest
@@ -45,11 +45,22 @@ def digest_run(
     account: Optional[str] = Query(None),
     hours: Optional[int] = Query(None),
     days: Optional[int] = Query(None),
+    body: Optional[dict] = Body(None),
 ) -> dict:
     """Fetch + build the digest, always live. No notify.py call — sending
     to chat is deferred to the agentic harness reading this response
     directly, see PLAN.md §4/§6. Nothing is persisted anywhere; defaults
-    to the last DEFAULT_LOOKBACK_HOURS unless overridden."""
+    to the last DEFAULT_LOOKBACK_HOURS unless overridden.
+
+    `hours`/`days` are accepted both as query params (for GET-style calls)
+    and as JSON body fields (for POST callers that send `-d '{"days":7}'`).
+    Body values take precedence when both are present, so an explicit
+    POST body is never silently ignored."""
+    if body:
+        if isinstance(body.get("hours"), int):
+            hours = body["hours"]
+        if isinstance(body.get("days"), int):
+            days = body["days"]
     if hours is not None and days is not None:
         raise HTTPException(status_code=400, detail="hours and days are mutually exclusive")
 

@@ -8,8 +8,9 @@ to chat (Slack / OpenClaw) is **not** this service's job — that's handled by
 an external agentic harness that reads the digest and sends its own
 notification.
 
-See `PLAN.md` for the full design and `AGENTS.md` for contribution rules if
-you're working on this with an AI coding agent.
+See `PLAN.md` for the full design, `AGENTS.md` for contribution rules if
+you're working on this with an AI coding agent, and `CHANGELOG.md` for a
+history of what's changed.
 
 ## Install
 
