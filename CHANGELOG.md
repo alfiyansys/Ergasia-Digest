@@ -7,9 +7,9 @@ this project has no version tags, so entries are grouped by date instead.
 ## 2026-08-08
 
 Bugs below were found and patched by the INVIS agent **Garbis**, whose
-patch (`ergasia-fix-garbis.patch`) was reviewed and implemented here —
-its `docker-compose.yml` hunk was reverted as redundant (see that
-section's note in the repo history), the other two were kept as-is.
+patch was reviewed and applied in commit `e3199bfe0c3bae0da6df3a8204b4c819d64db35b`
+— its `docker-compose.yml` hunk was reverted as redundant in a follow-up
+commit, the other two were kept as-is.
 
 ### Added
 - `POST /digest/run` now also accepts `hours`/`days` as JSON body fields,
