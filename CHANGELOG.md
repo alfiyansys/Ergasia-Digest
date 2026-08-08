@@ -4,7 +4,12 @@ All notable changes to Ergasia Digest are documented in this file.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/);
 this project has no version tags, so entries are grouped by date instead.
 
-## [Unreleased]
+## 2026-08-08
+
+Bugs below were found and patched by the INVIS agent **Garbis**, whose
+patch (`ergasia-fix-garbis.patch`) was reviewed and implemented here —
+its `docker-compose.yml` hunk was reverted as redundant (see that
+section's note in the repo history), the other two were kept as-is.
 
 ### Added
 - `POST /digest/run` now also accepts `hours`/`days` as JSON body fields,
